@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from fixer.agent import model as model_cfg
 from fixer.agent.runner import stream_mission
-from fixer.sim.world import World
+from fixer.sim.world import build_world
 
 OBJECTIVE = (
     "Our conversion rate has dropped significantly today. "
@@ -63,6 +63,7 @@ async def main() -> int:
     ap.add_argument("--seed", type=int, default=4242)
     ap.add_argument("--speed", type=float, default=120.0, help="sim seconds per real second")
     ap.add_argument("--objective", default=OBJECTIVE)
+    ap.add_argument("--incident", default="payment_config_regression")
     ap.add_argument("--db", default="./novacart_mission.db")
     args = ap.parse_args()
 

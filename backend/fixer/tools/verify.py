@@ -21,6 +21,13 @@ from .base import get_env, invoke, pct, tool, window
 # Below this many sessions a rate is too noisy to conclude anything from.
 MIN_SAMPLE = 400
 
+# The reference is deliberately wider than the window being tested. A single
+# short slice from yesterday carries as much sampling noise as the measurement
+# itself, and comparing one noisy number against another produces false
+# "did not recover" verdicts -- which would send the agent chasing a phantom
+# failure after a fix that actually worked.
+REFERENCE_MINUTES = 180
+
 
 def _delta(current: float | None, reference: float | None) -> dict:
     if current is None or reference is None:
@@ -42,6 +49,10 @@ async def check_conversion(window_minutes: int = 30, platform: str = "all") -> d
             windows react faster but carry more sampling noise.
         platform: "all", "web", "ios" or "android".
 
+    The reference is measured over a wider window than the current one (at
+    least three hours), because a short slice from yesterday is too noisy to
+    compare against reliably.
+
     Returns:
         Current and reference conversion rates with the session counts behind
         them, and the change between them. `sufficient_sample` is false when
@@ -52,7 +63,7 @@ async def check_conversion(window_minutes: int = 30, platform: str = "all") -> d
     async def body() -> dict:
         w = get_env().world
         cur_start, cur_end = window(w, window_minutes, 0)
-        ref_start, ref_end = window(w, window_minutes, 24 * 60)
+        ref_start, ref_end = window(w, max(window_minutes, REFERENCE_MINUTES), 24 * 60)
 
         async def rate(start, end):
             conds = [Session.ts >= start, Session.ts < end]
@@ -78,7 +89,10 @@ async def check_conversion(window_minutes: int = 30, platform: str = "all") -> d
             "platform": platform,
             "window_minutes": window_minutes,
             "current": {"rate_pct": cur_rate, "sessions": cur_n, "conversions": cur_c},
-            "reference_24h_ago": {"rate_pct": ref_rate, "sessions": ref_n, "conversions": ref_c},
+            "reference_24h_ago": {
+                "rate_pct": ref_rate, "sessions": ref_n, "conversions": ref_c,
+                "window_minutes": max(window_minutes, REFERENCE_MINUTES),
+            },
             "change": _delta(cur_rate, ref_rate),
             "sufficient_sample": cur_n >= MIN_SAMPLE and ref_n >= MIN_SAMPLE,
             "min_sample_for_confidence": MIN_SAMPLE,
@@ -106,7 +120,8 @@ async def check_payment_success(window_minutes: int = 30, platform: str = "all")
         w = get_env().world
 
         async def rate(ending_minutes_ago: int):
-            start, end = window(w, window_minutes, ending_minutes_ago)
+            mins = window_minutes if ending_minutes_ago == 0 else max(window_minutes, REFERENCE_MINUTES)
+            start, end = window(w, mins, ending_minutes_ago)
             conds = [Payment.ts >= start, Payment.ts < end]
             if platform != "all":
                 conds.append(Payment.platform == platform)

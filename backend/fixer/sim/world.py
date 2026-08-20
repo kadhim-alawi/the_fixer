@@ -49,6 +49,10 @@ REGIONS = [("US", 0.42), ("DE", 0.18), ("UK", 0.15), ("FR", 0.11), ("JP", 0.08),
 SOURCES = [("organic", 0.34), ("paid_search", 0.26), ("email", 0.18), ("social", 0.14), ("direct", 0.08)]
 SERVICES = ["checkout-svc", "payments-svc", "search-svc", "catalog-svc", "web-edge"]
 
+# History must extend past 24h by at least the width of the baseline window the
+# verification tools use, or a reference window ending "24h ago" falls off the
+# start of generated data and reads as zero. 1.3 days leaves ~7h of margin.
+#
 # Baseline funnel rates, tuned so overall conversion sits near 3.7%.
 RATE_CART = 0.22
 RATE_CHECKOUT = 0.40
@@ -73,6 +77,7 @@ CONFIG_KEYS: list[tuple[str, str, str]] = [
     ("payments.android.provider_profile", "standard_v4", "Provider profile for Android wallet payments."),
     ("payments.retry.max_attempts", "3", "Payment retry attempts before hard failure."),
     ("payments.capture_mode", "automatic", "Capture funds automatically or on fulfilment."),
+    ("payments.provider.primary", "stripe", "Primary payment provider. Documented failover: adyen."),
     ("checkout.session_ttl_minutes", "30", "Checkout session lifetime."),
     ("checkout.address_validation", "strict", "How strictly delivery addresses are validated."),
     ("checkout.guest_enabled", "true", "Allow checkout without an account."),
@@ -91,6 +96,7 @@ CONFIG_KEYS: list[tuple[str, str, str]] = [
 CONFIG_CHURN_VALUES: dict[str, list[str]] = {
     "payments.retry.max_attempts": ["2", "4", "5"],
     "payments.capture_mode": ["manual", "automatic"],
+    "payments.provider.primary": ["stripe"],
     "payments.web.provider_profile": ["standard_v4", "standard_v5"],
     "payments.android.provider_profile": ["standard_v4", "standard_v5"],
     "checkout.session_ttl_minutes": ["20", "45", "60"],
@@ -148,7 +154,7 @@ class Scenario:
     real_start: datetime  # wall clock at which the mission began
     incident_start: datetime  # sim time the cause was introduced
     speed: float = 60.0  # sim seconds per real second
-    history_days: float = 1.0
+    history_days: float = 1.3
     sessions_per_min: int = 250
     generated_to: datetime | None = None  # sim time of last generated row
     resolved_at: datetime | None = None  # sim time the cause was removed
@@ -181,6 +187,8 @@ class World(inc.WorldWriter):
         )
         self.scenario: Scenario | None = None
         self._pending: list[tuple[type, dict]] = []
+        # When set, the sim clock ignores wall time. See freeze().
+        self._frozen_now: datetime | None = None
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -194,9 +202,11 @@ class World(inc.WorldWriter):
         incident_key: str = "payment_config_regression",
         seed: int | None = None,
         speed: float = 60.0,
-        history_days: float = 1.0,
+        history_days: float = 1.3,
         sessions_per_min: int = 250,
         minutes_since_incident: int = 90,
+        frozen: bool = False,
+        history_only: bool = False,
     ) -> Scenario:
         seed = seed if seed is not None else random.randrange(1_000_000)
         now_sim = datetime(2026, 8, 19, 14, 30, 0)
@@ -216,6 +226,14 @@ class World(inc.WorldWriter):
         await self.reset_schema()
         await self._seed_static_world()
 
+        if history_only:
+            # Stop at the moment the incident would start. Everything up to here
+            # is the same for any incident with the same seed, so it is cacheable.
+            await self._generate(sc.sim_start - timedelta(days=history_days), sc.incident_start)
+            sc.generated_to = sc.incident_start
+            await self._save_scenario()
+            return sc
+
         incident = inc.get(incident_key)
         incident.setup(self, sc.incident_start)
         for d in incident.distractors:
@@ -224,27 +242,74 @@ class World(inc.WorldWriter):
 
         await self._generate(sc.sim_start - timedelta(days=history_days), sc.sim_start)
         sc.generated_to = sc.sim_start
+        if frozen:
+            self._frozen_now = sc.sim_start
         await self._save_scenario()
         return sc
+
+    async def activate_incident(
+        self, incident_key: str, *, frozen: bool = False, speed: float = 60.0
+    ) -> Scenario:
+        """Load cached history, plant the incident, and generate its window."""
+        async with self.sf() as s:
+            row = (
+                await s.execute(select(WorldState).where(WorldState.key == "scenario"))
+            ).scalar_one()
+        sc = Scenario.from_json(row.value)
+        sc.incident_key = incident_key
+        sc.scenario_id = f"nc-{sc.seed}-{incident_key[:6]}"
+        sc.real_start = datetime.utcnow()
+        sc.speed = speed
+        self.scenario = sc
+
+        incident = inc.get(incident_key)
+        incident.setup(self, sc.incident_start)
+        for d in incident.distractors:
+            d(self, sc.incident_start)
+        await self._flush()
+
+        await self._generate(sc.incident_start, sc.sim_start)
+        sc.generated_to = sc.sim_start
+        if frozen:
+            self._frozen_now = sc.sim_start
+        await self._save_scenario()
+        return sc
+
+    def freeze(self) -> None:
+        """Detach the sim clock from wall time.
+
+        Live, sim time runs off the wall clock: time passes while the agent
+        thinks, which is realistic and is what makes ``wait_for_traffic``
+        honest in the demo.
+
+        Under evaluation that is exactly wrong. It makes the world depend on
+        how long the code took to run, so the same seed produces different
+        worlds and a slow agent faces a different scenario than a fast one.
+        Frozen, the clock moves only when ``advance`` says so, and a seed
+        reproduces exactly.
+        """
+        assert self.scenario is not None
+        self._frozen_now = self.now()
 
     def now(self) -> datetime:
         """Current sim time."""
         assert self.scenario is not None
+        if self._frozen_now is not None:
+            return self._frozen_now
         elapsed_real = (datetime.utcnow() - self.scenario.real_start).total_seconds()
         return self.scenario.sim_start + timedelta(
             seconds=elapsed_real * self.scenario.speed
         )
 
     def advance(self, minutes: float) -> None:
-        """Jump the sim clock forward without waiting.
-
-        Used by tests and by the evaluation harness, which runs hundreds of
-        missions and cannot spend real time waiting for metrics to move.
-        """
+        """Jump the sim clock forward without waiting."""
         assert self.scenario is not None
-        self.scenario.real_start -= timedelta(
-            seconds=minutes * 60 / self.scenario.speed
-        )
+        if self._frozen_now is not None:
+            self._frozen_now += timedelta(minutes=minutes)
+        else:
+            self.scenario.real_start -= timedelta(
+                seconds=minutes * 60 / self.scenario.speed
+            )
 
     async def tick(self) -> None:
         """Bring generated data up to the current sim time. Cheap and idempotent."""
@@ -461,6 +526,7 @@ class World(inc.WorldWriter):
             ("checkout.address_autocomplete", True, "Address autocomplete in checkout."),
             ("search.semantic_ranking", True, "Semantic ranking in search results."),
             ("risk.strict_velocity_checks", False, "Aggressive velocity fraud checks."),
+            ("checkout.strict_address_match", False, "Reject orders whose delivery address does not exactly match the card address."),
         ]:
             self.set_flag(key, enabled, base, "platform-team", 100, desc)
 
@@ -526,28 +592,40 @@ class World(inc.WorldWriter):
                 region = _pick(rng, REGIONS)
                 source = _pick(rng, SOURCES)
 
-                # The DE campaign ending really does reduce DE traffic -- a real
-                # change that is not the cause of anything.
-                if region == "DE" and ts >= sc.incident_start - timedelta(hours=2):
-                    if rng.random() < 0.45:
+                # Unrelated traffic movements the incident declares -- a campaign
+                # ending really does reduce regional traffic. Real, visible in any
+                # "what changed?" sweep, and the cause of nothing.
+                drop = incident.region_traffic_drop.get(region)
+                if drop and ts >= sc.incident_start - timedelta(hours=2):
+                    if rng.random() < drop:
                         continue
 
                 matching = [e for e in effects if e.matches(platform=platform, region=region)]
 
                 added = rng.random() < RATE_CART
                 checkout = added and rng.random() < RATE_CHECKOUT
+
+                # Some causes push people out before they ever reach checkout --
+                # slow pages, broken search. That shows up in the funnel at a
+                # different stage than a payment failure does.
+                if checkout:
+                    abandon_boost = sum(e.cart_abandon_boost for e in matching)
+                    if abandon_boost and rng.random() < abandon_boost:
+                        checkout = False
+
                 converted = checkout and rng.random() < RATE_CONVERT
                 abandon_stage = None
                 incident_hit = False
+                hit_effect = None
 
                 if checkout and converted:
-                    boost = sum(e.checkout_failure_boost for e in matching)
+                    culprits = [e for e in matching if e.checkout_failure_boost]
+                    boost = sum(e.checkout_failure_boost for e in culprits)
                     if boost and rng.random() < boost:
                         converted = False
                         incident_hit = True
-                        abandon_stage = next(
-                            (e.abandon_stage for e in matching if e.checkout_failure_boost), "payment"
-                        )
+                        hit_effect = culprits[0]
+                        abandon_stage = hit_effect.abandon_stage
                 elif checkout and not converted:
                     abandon_stage = rng.choice(["payment", "shipping", "review"])
 
@@ -562,18 +640,20 @@ class World(inc.WorldWriter):
                 if not checkout:
                     continue
 
-                # Every checkout attempt produces an order and a payment attempt.
+                # A payment attempt only exists if the session got as far as
+                # paying. Something that loses people at the shipping step
+                # leaves no failed payment behind -- which is exactly how the
+                # funnel distinguishes the two kinds of cause.
                 amount = rng.randint(1800, 24000)
                 if converted:
                     o_status, p_status, err = "paid", "success", None
                 elif incident_hit:
-                    code = next(
-                        (e.payment_error_code for e in matching if e.payment_error_code), None
-                    )
-                    if code:
-                        o_status, p_status, err = "failed", "failed", code
-                    else:
-                        o_status, p_status, err = "pending", "failed", None
+                    if abandon_stage not in ("payment", "risk_check"):
+                        continue
+                    code = hit_effect.payment_error_code if hit_effect else None
+                    if code is None:
+                        continue
+                    o_status, p_status, err = "failed", "failed", code
                 elif abandon_stage == "payment" and rng.random() < BASELINE_PAYMENT_FAILURE / RATE_CONVERT:
                     o_status, p_status, err = "failed", "failed", _pick(rng, BASELINE_ERROR_CODES)
                 else:
@@ -583,9 +663,11 @@ class World(inc.WorldWriter):
                     {"id": sid, "ts": ts, "session_id": sid, "platform": platform,
                      "region": region, "amount_cents": amount, "status": o_status}
                 )
-                profile = "standard_v4"
-                if platform == "ios" and incident_hit:
-                    profile = "legacy_v2"
+                profile = (
+                    hit_effect.payment_profile
+                    if (incident_hit and hit_effect and hit_effect.payment_profile)
+                    else "standard_v4"
+                )
                 payments.append(
                     {"id": sid, "ts": ts, "order_id": sid, "platform": platform,
                      "provider": "stripe" if platform != "ios" else "adyen",
@@ -598,7 +680,9 @@ class World(inc.WorldWriter):
                 svc_eff = [e for e in effects if e.service == svc]
                 err_rate = rng.uniform(0.001, 0.006)
                 lat = rng.randint(70, 220)
-                if svc == "payments-svc" and any(e.payment_error_code for e in effects):
+                if svc == "payments-svc" and any(
+                    e.payment_error_code and e.service is None for e in effects
+                ):
                     err_rate += rng.uniform(0.05, 0.11)
                 for e in svc_eff:
                     if e.service_error_rate is not None:
@@ -653,3 +737,121 @@ class World(inc.WorldWriter):
                     for i in range(0, len(rows), 5000):
                         await s.execute(insert(model), rows[i : i + 5000])
             await s.commit()
+
+
+# ---------------------------------------------------------------------------
+# Cached world construction
+# ---------------------------------------------------------------------------
+#
+# Generating a day and a bit of history costs ~40 seconds, which is too slow to
+# sit behind a "Start Mission" click and far too slow to run an evaluation batch.
+#
+# The history *before* the incident does not depend on which incident it is --
+# same seed, same rows. So it is generated once, cached as a SQLite file, and
+# copied per scenario; only the incident window itself is generated fresh.
+
+
+import hashlib
+import sqlite3
+from pathlib import Path
+
+from sqlalchemy.ext.asyncio import create_async_engine
+
+CACHE_DIR = Path(".worldcache")
+
+
+def _clone(src: Path, dst: Path) -> None:
+    """Copy a SQLite database using SQLite's own backup API.
+
+    A plain file copy is not safe: pages still in the OS write cache, or a
+    connection that has not finished closing, produce a file that opens fine
+    and then reports "database disk image is malformed" on the first write.
+    The backup API takes a consistent snapshot through the engine itself.
+    """
+    source = sqlite3.connect(str(src))
+    try:
+        target = sqlite3.connect(str(dst))
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+    finally:
+        source.close()
+
+
+def _healthy(path: Path) -> bool:
+    try:
+        conn = sqlite3.connect(str(path))
+        try:
+            return conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+
+
+def _cache_key(seed: int, sessions_per_min: int, history_days: float, incident_key: str) -> str:
+    # An incident may declare unrelated traffic movements that begin before it
+    # does, so the history is only shared between incidents that declare the
+    # same ones.
+    quirks = repr(sorted(inc.get(incident_key).region_traffic_drop.items()))
+    raw = f"{seed}|{sessions_per_min}|{history_days}|{quirks}"
+    return hashlib.sha1(raw.encode()).hexdigest()[:16]
+
+
+async def build_world(
+    db_path: str,
+    *,
+    incident_key: str = "payment_config_regression",
+    seed: int = 4242,
+    frozen: bool = False,
+    speed: float = 60.0,
+    sessions_per_min: int = 250,
+    history_days: float = 1.3,
+    minutes_since_incident: int = 90,
+    use_cache: bool = True,
+) -> tuple["AsyncEngine", World]:
+    """Build a ready-to-run world, reusing cached history where possible."""
+    db = Path(db_path)
+    if db.exists():
+        db.unlink()
+
+    kw = dict(
+        incident_key=incident_key,
+        seed=seed,
+        speed=speed,
+        sessions_per_min=sessions_per_min,
+        history_days=history_days,
+        minutes_since_incident=minutes_since_incident,
+    )
+
+    if not use_cache:
+        engine = create_async_engine(f"sqlite+aiosqlite:///{db}")
+        world = World(engine)
+        await world.start_scenario(frozen=frozen, **kw)
+        return engine, world
+
+    CACHE_DIR.mkdir(exist_ok=True)
+    cache = CACHE_DIR / f"history_{_cache_key(seed, sessions_per_min, history_days, incident_key)}.db"
+
+    if cache.exists() and not _healthy(cache):
+        # A truncated or half-written cache would poison every run that copies
+        # it, and the failure surfaces far from the cause. Rebuild instead.
+        cache.unlink()
+
+    if not cache.exists():
+        tmp = CACHE_DIR / f"{cache.stem}.building.db"
+        if tmp.exists():
+            tmp.unlink()
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp}")
+        world = World(engine)
+        await world.start_scenario(history_only=True, **kw)
+        await engine.dispose()
+        _clone(tmp, cache)
+        tmp.unlink()
+
+    _clone(cache, db)
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db}")
+    world = World(engine)
+    await world.activate_incident(incident_key=incident_key, frozen=frozen, speed=speed)
+    return engine, world

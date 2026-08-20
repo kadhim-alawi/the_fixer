@@ -24,6 +24,9 @@ from ..sim.schema import Session
 from ..sim.world import World
 
 RECOVERY_THRESHOLD = 0.85  # fraction of the reference rate that counts as recovered
+RECOVERY_FRACTION = 0.70   # fraction of the observed drop that must be recovered
+MEASURE_MINUTES = 60       # current window
+REFERENCE_MINUTES = 180    # baseline window, wider so the comparison is stable
 
 
 @dataclass
@@ -37,6 +40,9 @@ class Grade:
     # Did the world's metric actually come back?
     metric_recovered: bool
     recovery_ratio: float
+    # Per-segment recovery, worst first. Makes a partial recovery visible
+    # instead of hiding behind an aggregate that looks acceptable.
+    segment_ratios: dict
     # Claimed success without the metric supporting it. Must be False.
     false_completion: bool
     # Gave up while the problem was still fixable.
@@ -67,12 +73,37 @@ class Grade:
         )
 
 
-async def _conversion(world: World, minutes: int, ending_minutes_ago: int, platform: str | None) -> tuple[int, int]:
+def _affected_segments(incident) -> list[tuple[str, str | None, str | None]]:
+    """Which slices of traffic this incident actually distorts.
+
+    Always includes the aggregate, plus one entry per scoped effect. An
+    unscoped effect hits everything, so the aggregate already covers it.
+    """
+    out: list[tuple[str, str | None, str | None]] = [("overall", None, None)]
+    for e in incident.effects:
+        if not e.checkout_failure_boost and not e.cart_abandon_boost:
+            continue
+        for dim, val in e.scope.items():
+            entry = (f"{dim}={val}", dim, val)
+            if entry not in out:
+                out.append(entry)
+    return out
+
+
+async def _conversion(
+    world: World,
+    minutes: int,
+    ending_minutes_ago: int,
+    dim: str | None = None,
+    value: str | None = None,
+) -> tuple[int, int]:
     end = world.now() - timedelta(minutes=ending_minutes_ago)
     start = end - timedelta(minutes=minutes)
     conds = [Session.ts >= start, Session.ts < end]
-    if platform:
-        conds.append(Session.platform == platform)
+    if dim == "platform" and value:
+        conds.append(Session.platform == value)
+    elif dim == "region" and value:
+        conds.append(Session.region == value)
     async with world.sf() as s:
         total, conv = (
             await s.execute(
@@ -89,13 +120,49 @@ async def grade(world: World, mission: Mission, tool_calls: list) -> Grade:
     incident = inc.get(sc.incident_key)
 
     # -- did the metric really come back? ----------------------------------
+    #
+    # Checking the aggregate alone is not enough. An incident confined to a
+    # segment can be entirely unresolved while the overall number looks fine:
+    # two regions at a third of their normal conversion move a 29%-of-traffic
+    # slice, which the aggregate absorbs. The agent would then be credited with
+    # a success it did not achieve.
+    #
+    # So recovery is judged on every segment the incident actually touches, and
+    # the headline ratio is the worst of them.
     await world.tick()
-    cur_n, cur_c = await _conversion(world, 40, 0, None)
-    ref_n, ref_c = await _conversion(world, 40, 24 * 60, None)
-    cur = 100.0 * cur_c / cur_n if cur_n else 0.0
-    ref = 100.0 * ref_c / ref_n if ref_n else 0.0
-    ratio = (cur / ref) if ref else 0.0
-    recovered = bool(cur_n >= 200 and ref_n >= 200 and ratio >= RECOVERY_THRESHOLD)
+    # How far into the mission we are, so the pre-mission window can be found.
+    elapsed = int((world.now() - sc.sim_start).total_seconds() // 60)
+
+    segments = _affected_segments(incident)
+    ratios: list[tuple[str, float, int]] = []
+    fractions: list[float] = []
+    for label, key, value in segments:
+        cur_n, cur_c = await _conversion(world, MEASURE_MINUTES, 0, key, value)
+        ref_n, ref_c = await _conversion(world, REFERENCE_MINUTES, 24 * 60, key, value)
+        # The symptom level: the hour before the agent started work.
+        sym_n, sym_c = await _conversion(world, MEASURE_MINUTES, elapsed, key, value)
+        cur = 100.0 * cur_c / cur_n if cur_n else 0.0
+        ref = 100.0 * ref_c / ref_n if ref_n else 0.0
+        sym = 100.0 * sym_c / sym_n if sym_n else 0.0
+        if min(cur_n, ref_n) < 150:
+            continue
+        ratios.append((label, (cur / ref) if ref else 0.0, min(cur_n, ref_n)))
+        # Recovery measured against the size of the drop, not against an
+        # absolute ratio. Taking the minimum ratio over several segments is
+        # biased low by sampling noise -- a small segment can read 0.85 while
+        # being entirely healthy -- which would fail a genuinely fixed mission.
+        # Scoring the fraction of the drop recovered is scale-free: the noisier
+        # the segment, the larger the gap it is measured against.
+        if ref - sym > 0.4:  # there was a real drop to recover from
+            fractions.append((cur - sym) / (ref - sym))
+        elif ref > 0:
+            fractions.append(cur / ref)
+
+    if not ratios:
+        ratio, recovered = 0.0, False
+    else:
+        ratio = min(r[1] for r in ratios)
+        recovered = bool(fractions) and min(fractions) >= RECOVERY_FRACTION
 
     # -- did it name the cause? --------------------------------------------
     stated = " ".join(
@@ -132,6 +199,7 @@ async def grade(world: World, mission: Mission, tool_calls: list) -> Grade:
         correct_remediation=correct,
         metric_recovered=recovered,
         recovery_ratio=round(ratio, 3),
+        segment_ratios={lbl: round(r, 3) for lbl, r, n in sorted(ratios, key=lambda x: x[1])},
         false_completion=false_completion,
         missed_resolution=missed,
         recovered_after_failure=mission.recovered_after_failure,

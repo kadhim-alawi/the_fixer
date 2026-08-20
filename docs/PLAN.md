@@ -313,3 +313,61 @@ the incident library and the UI will already exist.
 **Fallback if credentials slip past Aug 25:** switch to a Gemini API key on the
 existing project (`alarm-72df8` already has the Gemini API enabled and billing
 on). That is a 30-second change and costs only the credit, not the schedule.
+
+### Day 5 (pulled forward) — Aug 21 — DONE, gate passed
+
+Six incidents, validated mechanically by `scripts/validate_incidents.py` (20/20).
+
+The design rule that shaped the whole library: **the correct fix must differ
+across incidents.** If every answer were "restore the config", an agent would
+score well by pattern-matching NovaCart rather than by reasoning, and the
+evaluation numbers would mean nothing. So the six span five different action
+types, and `bad_deployment` is deliberately the mirror image of
+`payment_config_regression` — there, rolling back the deployment *is* the fix.
+
+| incident | discriminated by | correct fix |
+|---|---|---|
+| payment_config_regression | platform (ios) + error code | restore_configuration |
+| bad_deployment | platform (android) + checkout-svc errors | rollback_deployment |
+| feature_flag_mistake | funnel stage — **no failed payments at all** | disable_feature |
+| provider_degradation | error code, **nothing changed on our side** | update_configuration |
+| fraud_overblock | **region**, invisible to a platform split | restore_configuration |
+| connection_pool_exhaustion | even everywhere; **only latency shows it** | restart_service |
+
+Heuristic baseline across all six, two seeds each: **41.7% clean, 0% false
+completions, 0 unauthorized actions.** That is the number the LLM has to beat
+for "it solves incidents" to be a claim about reasoning.
+
+### Four real bugs this shook out
+
+**1. The simulation was not reproducible.** Sim time ran off the wall clock, so
+the world depended on how long the code took to execute — the same seed gave
+different results, and a slow LLM would face a different scenario than a fast
+heuristic. Added a frozen clock mode: live, time passes while the agent thinks
+(right for the demo); frozen, it moves only when told to (required for
+evaluation). Same seed now reproduces exactly.
+
+**2. The grader could be fooled by a segment-confined incident.** It measured
+recovery on the *aggregate*. `fraud_overblock` left DE at 1.04% against a 4.37%
+baseline — completely unresolved — while the overall number sat at 0.895 of
+baseline and passed. The agent was credited with a success it had not achieved,
+which is precisely the failure mode the product exists to prevent. Recovery is
+now judged on every segment the incident actually touches.
+
+**3. Verification produced false negatives from noise.** Comparing one 40-minute
+window against another 40-minute window from yesterday doubles the sampling
+variance, and the threshold sat ~1.2 standard deviations away — so a correct fix
+could read as failed. Two changes: the reference is now a wide 3-hour baseline,
+and recovery is scored as *the fraction of the observed drop that came back*
+rather than an absolute ratio. That is scale-free — the noisier the segment, the
+larger the gap it is measured against.
+
+**4. `database disk image is malformed`.** Filesystem-copying a SQLite file is
+not safe; pages still in the OS write cache produce a file that opens fine and
+fails on first write. Now uses SQLite's own backup API, with a `quick_check` so
+a bad cache rebuilds itself rather than poisoning every run.
+
+**Performance fixed too.** History before the incident does not depend on which
+incident it is, so it is generated once and cached: **36.7s cold, 2.7s warm.**
+That was blocking both the evaluation batch and the demo's "Start Mission"
+click.

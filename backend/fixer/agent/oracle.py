@@ -35,8 +35,8 @@ from .runner import MissionEvent, MissionResult
 ORDINARY = {"CARD_DECLINED", "INSUFFICIENT_FUNDS", "EXPIRED_CARD", "RISK_HOLD"}
 
 # Long enough for a usable sample at NovaCart's traffic levels.
-SETTLE_MINUTES = 45
-VERIFY_WINDOW = 40
+SETTLE_MINUTES = 65
+VERIFY_WINDOW = 60
 
 
 async def run_oracle(

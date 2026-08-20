@@ -28,7 +28,7 @@ from fixer import tools as T
 from fixer.agent.oracle import run_oracle
 from fixer.evaluation.grade import grade
 from fixer.mission import MissionStatus
-from fixer.sim.world import World
+from fixer.sim.world import World, build_world
 
 ICON = {"message": "*", "thought": "  ", "tool_result": "  <", "action": " !", "error": " x"}
 
@@ -42,9 +42,7 @@ def guard(meta, args):
 async def run(seed: int, db: str, verbose: bool = True):
     if os.path.exists(db):
         os.remove(db)
-    engine = create_async_engine(f"sqlite+aiosqlite:///{db}")
-    world = World(engine)
-    await world.start_scenario(seed=seed)
+    engine, world = await build_world(db, seed=seed, frozen=True)
 
     mission = None
     async for ev, m in run_oracle(
