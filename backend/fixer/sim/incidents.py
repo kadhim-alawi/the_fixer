@@ -80,6 +80,9 @@ class Incident:
     effects: list[Effect]
     # Does this action remove the cause?
     is_fixed_by: Callable[[Action], bool]
+    # Tokens that must appear in a stated root cause for it to count as
+    # correct. Keeps grading honest without demanding exact wording.
+    root_cause_tokens: list[str] = field(default_factory=list)
     # Plausible-but-wrong actions, recorded so evaluation can tell "agent was
     # fooled by a distractor" from "agent had no idea".
     known_decoys: list[str] = field(default_factory=list)
@@ -218,6 +221,7 @@ INCIDENT_A = Incident(
         ),
     ],
     is_fixed_by=_fixes_incident_a,
+    root_cause_tokens=["payments.ios.provider_profile", "legacy_v2"],
     known_decoys=["rollback_deployment:8472", "restart_service:checkout-svc"],
     distractors=[_distractor_a_traffic, _distractor_a_deploy],
     ticket_templates=[

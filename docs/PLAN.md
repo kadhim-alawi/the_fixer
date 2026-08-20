@@ -243,3 +243,73 @@ failure. Worth knowing before trusting any ADK example written against 1.x.
 **Blocked:** the last gate item — an ADK agent making a real tool call — needs
 model credentials. `scripts/run_mission.py` is written and wired; it detects the
 backend, and reports cleanly instead of failing when none is configured.
+
+### Day 3 — Aug 21 — infrastructure DONE, agent gate BLOCKED
+
+Credentials deferred to the hackathon credit project, so the two gates that
+need a model (Day 3, Day 4) cannot run yet. Everything around them is built and
+tested, so those gates become a single command when credentials land.
+
+**Mission state is now structured, not prose.** Five reasoning tools let the
+agent record findings, put forward hypotheses with confidence, revise that
+confidence with a stated reason, assess whether a remediation actually worked,
+and conclude. That turns the agent's thinking into data Mission Control can
+render and the grader can score — without exposing raw chain-of-thought. A
+rejected hypothesis is as valuable a record as a confirmed one: it is the
+visible evidence the agent changed its mind when the data said so.
+
+Actions are recorded on the mission automatically inside `invoke`, not by the
+agent reporting them. What happened must not depend on the agent choosing to be
+honest about it.
+
+**Added `wait_for_traffic`.** A remediation only affects sessions served after
+it. Without an explicit wait the agent would verify seconds after acting, see
+old traffic, and wrongly conclude its fix failed. Under evaluation the wait
+jumps the sim clock; in the demo it is an honest wait and reads as the agent
+monitoring its change.
+
+**Built a deterministic heuristic agent** (`agent/oracle.py`). Not a mock — it
+drives the real tools, world and Mission over the same path the LLM will. It
+exists so the pipeline can be regression-tested with no credentials, and so the
+LLM has a baseline to be measured against. "Solved 9 of 10" means little alone;
+"solved 9 of 10 where a shallow heuristic solves 4" is a claim about reasoning.
+
+**Pulled Day 8's grader forward.** It sits outside the agent, reads the world
+directly, and is the only component allowed to know the incident.
+
+Full run, 12/12 checks:
+
+```
+isolated to ios -> PAY_CFG_3021 -> logs name 'legacy_v2'
+H1 deployment 8472        0.65
+H2 config provider_profile 0.45
+  rollback_deployment(8472)          -> 0.872% vs 4.131%   INEFFECTIVE
+  H1 rejected (0.05), H2 raised (0.85)
+  restore_configuration(...)          -> 4.281% vs 3.548%   effective
+SUCCESS  root_cause_identified=True  recovery_ratio=1.053  false_completion=False
+22 tool calls, 139 sim minutes
+```
+
+**Negative control passes too:** a mission that declares SUCCESS having done
+nothing is caught — `metric_recovered=False`, `false_completion=True`. The
+grader cannot be satisfied by an agent that simply says it succeeded.
+
+### Schedule change
+
+Days 3 and 4 are the two critical gates and both need a model. Rather than
+idle, the model-independent work moves forward:
+
+| was | now |
+|---|---|
+| Day 4 — hypotheses + recovery loop | deferred until credentials |
+| Day 5 — incidents B–F | **pulled to next** — no model needed |
+| Day 6 — Mission Control UI | **pulled forward** — the oracle produces real events to render |
+| Day 8 — evaluation harness | grader already built |
+
+When credentials arrive, Days 3–4 become: run `scripts/run_mission.py`, compare
+the LLM's grade against the oracle's on the same seeds, and tune. The scoring,
+the incident library and the UI will already exist.
+
+**Fallback if credentials slip past Aug 25:** switch to a Gemini API key on the
+existing project (`alarm-72df8` already has the Gemini API enabled and billing
+on). That is a 30-second change and costs only the credit, not the schedule.

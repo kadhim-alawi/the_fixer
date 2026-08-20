@@ -6,7 +6,7 @@ as a side effect of importing this package.
 
 from __future__ import annotations
 
-from . import act, read, verify  # noqa: F401  (imported for registration)
+from . import act, read, reason, verify  # noqa: F401  (imported for registration)
 from .base import (
     FUNCTIONS,
     REGISTRY,
@@ -42,15 +42,25 @@ VERIFY_TOOLS = [
     verify.check_conversion,
     verify.check_payment_success,
     verify.check_error_rate,
+    verify.wait_for_traffic,
 ]
 
-ALL_TOOLS = READ_TOOLS + ACT_TOOLS + VERIFY_TOOLS
+REASON_TOOLS = [
+    reason.record_finding,
+    reason.record_hypothesis,
+    reason.revise_hypothesis,
+    reason.assess_remediation,
+    reason.conclude_mission,
+]
+
+ALL_TOOLS = READ_TOOLS + ACT_TOOLS + VERIFY_TOOLS + REASON_TOOLS
 
 __all__ = [
     "ALL_TOOLS",
     "READ_TOOLS",
     "ACT_TOOLS",
     "VERIFY_TOOLS",
+    "REASON_TOOLS",
     "REGISTRY",
     "FUNCTIONS",
     "ToolCall",

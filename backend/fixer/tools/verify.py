@@ -11,6 +11,8 @@ and it must make that call from the numbers and the sample sizes.
 
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import Integer, and_, case, func, select
 
 from ..sim.schema import Payment, Session
@@ -184,3 +186,52 @@ async def check_error_rate(window_minutes: int = 30, error_code: str = "") -> di
         {"window_minutes": window_minutes, "error_code": error_code},
         body,
     )
+
+
+@tool(kind="verify", permission="READ")
+async def wait_for_traffic(minutes: int) -> dict:
+    """Let new traffic accumulate before verifying a change.
+
+    A remediation only affects sessions served after it was applied. Checking a
+    metric immediately after acting measures mostly old traffic and will look
+    like no change. Wait long enough for a decent sample, then verify.
+
+    Thirty minutes is usually enough on a busy platform; use more if the
+    verification tools report `sufficient_sample: false`.
+
+    Args:
+        minutes: How many minutes of fresh traffic to wait for.
+
+    Returns:
+        The time waited and the number of sessions that arrived during it.
+    """
+
+    async def body() -> dict:
+        env = get_env()
+        w = env.world
+        minutes_ = max(1, min(int(minutes), 240))
+        before = w.now()
+
+        if env.fast_forward:
+            w.advance(minutes_)
+        else:
+            # Honest wait: the sim clock runs faster than wall time, so this
+            # costs minutes_/speed real seconds.
+            await asyncio.sleep(minutes_ * 60 / w.scenario.speed)
+        await w.tick()
+
+        async with w.sf() as s:
+            arrived = (
+                await s.execute(
+                    select(func.count(Session.id)).where(
+                        Session.ts >= before, Session.ts < w.now()
+                    )
+                )
+            ).scalar_one()
+        return {
+            "waited_minutes": minutes_,
+            "sessions_since": arrived,
+            "now": w.now().isoformat(timespec="seconds"),
+        }
+
+    return await invoke("wait_for_traffic", {"minutes": minutes}, body)

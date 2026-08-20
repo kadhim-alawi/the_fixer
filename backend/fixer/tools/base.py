@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable, Literal
 
+from ..mission import Mission
 from ..sim.world import World
 
 Permission = Literal["READ", "WRITE", "EXECUTE"]
@@ -31,7 +32,7 @@ Reversibility = Literal["REVERSIBLE", "PARTIAL", "IRREVERSIBLE"]
 @dataclass(frozen=True)
 class ToolMeta:
     name: str
-    kind: Literal["read", "act", "verify"]
+    kind: Literal["read", "act", "verify", "reason"]
     permission: Permission
     risk: Risk
     reversibility: Reversibility
@@ -48,7 +49,7 @@ FUNCTIONS: dict[str, Callable] = {}
 
 def tool(
     *,
-    kind: Literal["read", "act", "verify"],
+    kind: Literal["read", "act", "verify", "reason"],
     permission: Permission,
     risk: Risk = "LOW",
     reversibility: Reversibility = "REVERSIBLE",
@@ -100,9 +101,13 @@ class ToolEnv:
     """
 
     world: World
+    mission: Mission | None = None
     calls: list[ToolCall] = field(default_factory=list)
     # Set by the safety gate (Day 7) to block a call before it executes.
     guard: Callable[[ToolMeta, dict], str | None] | None = None
+    # Evaluation runs hundreds of missions and cannot spend real time
+    # waiting; when true, waits jump the sim clock instead of sleeping.
+    fast_forward: bool = False
 
     def record(
         self,
@@ -164,6 +169,19 @@ async def invoke(name: str, args: dict, body: Callable) -> dict:
         result = {"error": type(exc).__name__, "detail": str(exc)}
     dt = int((time.perf_counter() - t0) * 1000)
     env.record(name, args, result, dt)
+
+    # Remediations land on the mission automatically. Relying on the agent to
+    # also report its own actions would make the record of what happened
+    # dependent on the agent choosing to be honest about it.
+    if meta.kind == "act" and env.mission is not None and isinstance(result, dict):
+        env.mission.record_action(
+            tool=name,
+            args=args,
+            risk=meta.risk,
+            reversibility=meta.reversibility,
+            applied=bool(result.get("applied")),
+            sim_time=env.world.now().isoformat(timespec="seconds"),
+        )
     return result
 
 
