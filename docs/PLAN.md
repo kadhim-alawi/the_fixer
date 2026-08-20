@@ -202,3 +202,44 @@ incident is incident-independent, so one cached baseline serves every scenario.
 **Bug fixed:** the diurnal traffic curve could evaluate negative, collapsing
 traffic to 1 session/min and making short-window conversion rates statistically
 meaningless. Now bounded to roughly [0.5, 1.5].
+
+### Day 2 — Aug 20 — DONE (gate partially blocked on credentials)
+
+18 tools built across three kinds, all passing `scripts/smoke_day2.py` (13/13):
+
+| kind | tools |
+|---|---|
+| read (9) | conversion_funnel, payments, orders, logs, deployments, configuration, feature_flags, support_tickets, infrastructure |
+| act (6) | rollback_deployment, update_configuration, restore_configuration, disable_feature, restart_service, issue_goodwill_refunds |
+| verify (3) | check_conversion, check_payment_success, check_error_rate |
+
+Verified without needing a model: every tool produces a valid ADK declaration
+with its parameters and description; every tool returns real numbers from the
+live world; the ledger records each call with permission/risk/reversibility;
+the safety gate refuses `issue_goodwill_refunds` (HIGH/IRREVERSIBLE) and
+records the refusal; no tool result leaks scenario internals.
+
+**Design rules that turned out to matter:**
+- Verification tools return numbers and sample sizes, never a verdict. No field
+  in any result says "solved" — that judgement belongs to the agent, from data.
+- Every action tool requires a `reason` argument. Unreviewable actions are not
+  allowed to exist.
+- Action results carry an explicit caveat that a tool succeeding is not evidence
+  the problem is fixed.
+- Comparisons are always "same window 24h ago", never "before the incident",
+  so no tool can leak when the incident began.
+
+**Realism fix:** added ordinary config churn — 9 unrelated settings change in a
+typical 24h window, some by release scripts. Without it, "what changed
+recently?" returned exactly one row and the investigation collapsed into a
+single lookup. The agent now has to reason about which change could actually
+produce the symptom it sees.
+
+**Not a bug, worth recording:** ADK 2.7 emits `parameters_json_schema` rather
+than the legacy `parameters` field. The first version of the gate read the old
+field and reported zero parameters on all 18 tools, which looked like a total
+failure. Worth knowing before trusting any ADK example written against 1.x.
+
+**Blocked:** the last gate item — an ADK agent making a real tool call — needs
+model credentials. `scripts/run_mission.py` is written and wired; it detects the
+backend, and reports cleanly instead of failing when none is configured.

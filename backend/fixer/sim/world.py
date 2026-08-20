@@ -65,6 +65,49 @@ BASELINE_ERROR_CODES = [
 
 APP_VERSIONS = {"web": ["w-3.4.1"], "ios": ["i-6.2.0", "i-6.1.4"], "android": ["a-5.9.2"]}
 
+# Runtime configuration. Most of these exist purely so that "which setting
+# changed recently?" is a real question with a long answer.
+CONFIG_KEYS: list[tuple[str, str, str]] = [
+    ("payments.ios.provider_profile", "standard_v4", "Provider profile used when tokenising iOS wallet payments."),
+    ("payments.web.provider_profile", "standard_v4", "Provider profile for web card payments."),
+    ("payments.android.provider_profile", "standard_v4", "Provider profile for Android wallet payments."),
+    ("payments.retry.max_attempts", "3", "Payment retry attempts before hard failure."),
+    ("payments.capture_mode", "automatic", "Capture funds automatically or on fulfilment."),
+    ("checkout.session_ttl_minutes", "30", "Checkout session lifetime."),
+    ("checkout.address_validation", "strict", "How strictly delivery addresses are validated."),
+    ("checkout.guest_enabled", "true", "Allow checkout without an account."),
+    ("risk.fraud_score_threshold", "82", "Block orders scoring above this."),
+    ("risk.velocity_window_minutes", "15", "Window for repeat-purchase velocity checks."),
+    ("catalog.cache_ttl_seconds", "300", "Product catalogue cache TTL."),
+    ("catalog.image_variant", "webp_v2", "Image format served to clients."),
+    ("search.result_page_size", "24", "Results per search page."),
+    ("search.ranking_model", "rank_v7", "Ranking model used by search."),
+    ("web.edge_cache_seconds", "60", "Edge cache lifetime for storefront pages."),
+    ("web.rate_limit_rpm", "600", "Per-client request ceiling."),
+    ("marketing.campaign.de_summer.active", "true", "Regional campaign toggle."),
+    ("notifications.order_email_template", "tpl_v12", "Order confirmation email template."),
+]
+
+CONFIG_CHURN_VALUES: dict[str, list[str]] = {
+    "payments.retry.max_attempts": ["2", "4", "5"],
+    "payments.capture_mode": ["manual", "automatic"],
+    "payments.web.provider_profile": ["standard_v4", "standard_v5"],
+    "payments.android.provider_profile": ["standard_v4", "standard_v5"],
+    "checkout.session_ttl_minutes": ["20", "45", "60"],
+    "checkout.address_validation": ["lenient", "strict"],
+    "checkout.guest_enabled": ["true", "false"],
+    "risk.fraud_score_threshold": ["76", "80", "88"],
+    "risk.velocity_window_minutes": ["10", "20", "30"],
+    "catalog.cache_ttl_seconds": ["120", "600", "900"],
+    "catalog.image_variant": ["webp_v2", "avif_v1"],
+    "search.result_page_size": ["12", "36", "48"],
+    "search.ranking_model": ["rank_v6", "rank_v8"],
+    "web.edge_cache_seconds": ["30", "120", "300"],
+    "web.rate_limit_rpm": ["400", "800", "1200"],
+    "marketing.campaign.de_summer.active": ["true", "false"],
+    "notifications.order_email_template": ["tpl_v11", "tpl_v13"],
+}
+
 
 def _pick(rng: random.Random, weighted: list[tuple[str, float]]) -> str:
     r = rng.random()
@@ -282,6 +325,25 @@ class World(inc.WorldWriter):
                     "note": "Process restarted; configuration reloaded from current values.",
                 }
 
+            elif action.kind == "issue_goodwill_refunds":
+                since = int(action.params.get("since_minutes", 60))
+                cutoff = ts - timedelta(minutes=max(1, since))
+                rows = (
+                    await s.execute(
+                        select(Order).where(Order.ts >= cutoff, Order.status == "failed")
+                    )
+                ).scalars().all()
+                value = sum(o.amount_cents for o in rows)
+                for o in rows:
+                    o.status = "refunded"
+                result = {
+                    "applied": True,
+                    "detail": f"refunded {len(rows)} failed orders ({value / 100:.2f})",
+                    "orders_refunded": len(rows),
+                    "value_cents": value,
+                    "note": "Irreversible. Money has left the account.",
+                }
+
             else:
                 result = {"applied": False, "detail": f"unknown action {action.kind}"}
 
@@ -374,16 +436,25 @@ class World(inc.WorldWriter):
         assert sc is not None
         base = sc.sim_start - timedelta(days=sc.history_days)
 
-        for key, value, desc in [
-            ("payments.ios.provider_profile", "standard_v4", "Provider profile used when tokenising iOS wallet payments."),
-            ("payments.web.provider_profile", "standard_v4", "Provider profile for web card payments."),
-            ("payments.retry.max_attempts", "3", "Payment retry attempts before hard failure."),
-            ("checkout.session_ttl_minutes", "30", "Checkout session lifetime."),
-            ("risk.fraud_score_threshold", "82", "Block orders scoring above this."),
-            ("catalog.cache_ttl_seconds", "300", "Product catalogue cache TTL."),
-            ("marketing.campaign.de_summer.active", "true", "Regional campaign toggle."),
-        ]:
+        for key, value, desc in CONFIG_KEYS:
             self.set_config(key, value, base, "platform-team", desc)
+
+        # Ordinary configuration churn. Real platforms change settings all day,
+        # so "what changed recently?" returns a list, not an answer. Without
+        # this the investigation collapses into a single lookup and the agent
+        # never has to reason about which change could produce the symptom.
+        churn = random.Random(sc.seed ^ 0x5C)
+        churnable = [c for c in CONFIG_KEYS if not c[0].startswith("payments.ios")]
+        for key, _v, desc in churn.sample(churnable, k=min(9, len(churnable))):
+            new_value = churn.choice(CONFIG_CHURN_VALUES.get(key, ["true", "false"]))
+            self.set_config(
+                key,
+                new_value,
+                sc.sim_start - timedelta(minutes=churn.randint(20, 20 * 60)),
+                churn.choice(["c.rivera", "s.novak", "t.bergman", "platform-team",
+                              "release-script/8468", "release-script/8455"]),
+                desc,
+            )
 
         for key, enabled, desc in [
             ("checkout.express_wallet", True, "One-tap wallet checkout."),
