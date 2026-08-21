@@ -1,0 +1,274 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  /* Rendered to PNG for the Devpost architecture upload. Light background and
+     high contrast so it survives being viewed at any size on any screen. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1500px; padding: 34px 40px 30px;
+    background: #fff; color: #10151f;
+    font-family: "Segoe UI", -apple-system, Roboto, sans-serif;
+  }
+  h1 { font-size: 27px; letter-spacing: 1px; }
+  h1 span { color: #1a73e8; }
+  .sub { color: #5f6b7d; font-size: 14px; margin: 5px 0 20px; }
+
+  .cloud {
+    border: 2px solid #1a73e8; border-radius: 12px; padding: 14px 18px 18px;
+    background: #f6f9ff; position: relative;
+  }
+  .cloud > .tag {
+    position: absolute; top: -12px; left: 18px; background: #1a73e8; color: #fff;
+    font-size: 12px; font-weight: 700; letter-spacing: 1.4px;
+    padding: 3px 12px; border-radius: 5px;
+  }
+
+  .cols { display: grid; grid-template-columns: 1fr 268px; gap: 18px; align-items: start; }
+
+  .svc {
+    border: 1.5px solid #b9c6db; border-radius: 9px; background: #fff;
+    padding: 12px 14px;
+  }
+  .svc > h3 {
+    font-size: 13px; letter-spacing: 1.1px; color: #1a73e8;
+    display: flex; align-items: baseline; gap: 9px; margin-bottom: 3px;
+  }
+  .svc > h3 small { color: #8593a8; font-weight: 400; letter-spacing: 0; font-size: 11.5px; }
+
+  .box {
+    border: 1.5px solid #cfd8e6; border-radius: 8px; background: #fff;
+    padding: 9px 12px; margin-top: 9px;
+  }
+  .box b { font-size: 13.5px; display: block; }
+  .box .d { font-size: 11.5px; color: #5f6b7d; margin-top: 2px; line-height: 1.45; }
+  /* .box b is block-level for headings; inside a description it must stay inline
+     or it breaks the sentence and strands the full stop on its own line. */
+  .box .d b, .box .d i { display: inline; font-size: inherit; }
+  .box.hi { border-color: #1a73e8; background: #eef4ff; }
+  .box.warn { border-color: #e8912a; background: #fff8ee; }
+  .box.sim { border-color: #7b52c9; background: #f7f2ff; }
+
+  .arrow { text-align: center; color: #8593a8; font-size: 15px; line-height: 1.1; margin: 5px 0; }
+  .arrow small { display: block; font-size: 10.5px; letter-spacing: .6px; }
+
+  .tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 9px; }
+  .tool { border: 1px solid #cfd8e6; border-radius: 7px; padding: 7px 9px; background: #fff; }
+  .tool b { font-size: 12px; color: #10151f; }
+  .tool .n { font-size: 10.5px; color: #8593a8; }
+  .tool .l { font-size: 10.5px; color: #5f6b7d; margin-top: 3px; line-height: 1.4; }
+
+  .loop { display: flex; align-items: stretch; gap: 0; margin-top: 10px; }
+  .step {
+    flex: 1; border: 1.5px solid #cfd8e6; border-radius: 8px; background: #fff;
+    padding: 8px 6px; text-align: center;
+  }
+  .step b { font-size: 11.5px; letter-spacing: .8px; display: block; }
+  .step .d { font-size: 10px; color: #5f6b7d; margin-top: 2px; line-height: 1.35; }
+  .step.pass { border-color: #1e8e4e; background: #f1fbf5; }
+  .step.fail { border-color: #d93025; background: #fff4f3; }
+  .lsep { display: flex; align-items: center; color: #8593a8; padding: 0 6px; font-size: 14px; }
+
+  .foot { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .foot .k { font-size: 11px; letter-spacing: 1.2px; color: #8593a8; margin-bottom: 5px; }
+  .foot ul { list-style: none; font-size: 12px; line-height: 1.7; }
+  .foot li b { color: #1a73e8; }
+  .req { border-left: 3px solid #1e8e4e; padding-left: 11px; }
+</style>
+</head>
+<body>
+
+<h1>THE <span>FIXER</span> &nbsp;·&nbsp; Autonomous problem resolution</h1>
+<div class="sub">Give it a problem. Walk away. It investigates, acts, recovers from its own failed
+attempts, and proves the problem is fixed against real business metrics.</div>
+
+<div style="border:1.5px solid #cfd8e6;border-radius:9px;padding:9px 13px;background:#fff;text-align:center">
+  <b style="font-size:13.5px">Operator / Judge &nbsp;—&nbsp; browser</b>
+  <div style="font-size:11.5px;color:#5f6b7d;margin-top:2px">
+    Mission Control console. One sentence in; a live timeline, hypothesis confidence and a
+    before/after metric chart out.
+  </div>
+</div>
+<div class="arrow">▼<small>HTTPS · Server-Sent Events (live mission stream)</small></div>
+
+<div class="cloud">
+  <div class="tag">GOOGLE CLOUD</div>
+  <div class="cols">
+
+    <div class="svc">
+      <h3>CLOUD RUN <small>the-fixer · 2 vCPU / 2 GiB · scales to zero</small></h3>
+
+      <div class="box"><b>FastAPI</b>
+        <div class="d">Serves the console and streams mission events over SSE. One deployable unit —
+        the built React app ships inside the image.</div></div>
+
+      <div class="arrow">▼</div>
+
+      <div class="box hi"><b>Mission Orchestrator &nbsp;·&nbsp; Google ADK 2.7 <code>LlmAgent</code></b>
+        <div class="d">Owns the objective. Plans, calls tools, holds competing hypotheses, decides when
+        the mission is actually done. Bounded by <code>max_llm_calls</code>.</div></div>
+
+      <div class="arrow">▼</div>
+
+      <div class="box warn"><b>Safety Gate</b>
+        <div class="d">Every tool carries <b>permission · risk · reversibility</b>. HIGH-risk or
+        IRREVERSIBLE actions pause the agent and wait for a human, bounded at 180s. Refusals are
+        recorded, not silently dropped.</div></div>
+
+      <div class="arrow">▼</div>
+
+      <div class="box"><b>Tool Gateway &nbsp;·&nbsp; 25 structured tools</b>
+        <div class="d">The agent never writes SQL and never sees a raw row. Every call is timed,
+        recorded and permission-checked through one path.</div>
+        <div class="tools">
+          <div class="tool"><b>READ</b> <span class="n">10</span>
+            <div class="l">funnel · payments · logs · deployments · config · flags · tickets ·
+            infrastructure · parallel segment survey</div></div>
+          <div class="tool"><b>ACT</b> <span class="n">6</span>
+            <div class="l">rollback deploy · update / restore config · disable flag ·
+            restart service · refunds</div></div>
+          <div class="tool"><b>VERIFY</b> <span class="n">4</span>
+            <div class="l">conversion · payment success · error rate · wait for traffic.
+            Return numbers and sample sizes — never a verdict.</div></div>
+          <div class="tool"><b>REASON</b> <span class="n">5</span>
+            <div class="l">findings · hypotheses · confidence revision · remediation assessment ·
+            conclusion. Makes reasoning inspectable.</div></div>
+        </div>
+      </div>
+
+      <div class="arrow">▼</div>
+
+      <div class="box sim"><b>NovaCart &nbsp;·&nbsp; simulated e-commerce platform</b>
+        <div class="d">SQLite on <code>/tmp</code>, pre-generated into the container image. ~450k sessions,
+        orders, payments, deployments, configuration, flags, logs, tickets, service health.
+        An incident plants a <i>cause</i>; effects are folded into generated traffic. Remediations change
+        how future rows are generated, so <b>metric recovery is computed, never scripted</b>.</div></div>
+
+      <div class="box" style="margin-top:14px;background:#fbfcfe">
+        <b style="font-size:12px;letter-spacing:1px;color:#8593a8">FLAGSHIP SCENARIO — MEASURED, NOT ILLUSTRATIVE</b>
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:7px">
+          <tr style="color:#5f6b7d">
+            <td style="padding:3px 0">conversion by platform, before</td>
+            <td style="text-align:right"><b style="display:inline;color:#1a73e8">ios 3.61%</b></td>
+            <td style="text-align:right;color:#5f6b7d">web 4.02%</td>
+            <td style="text-align:right;color:#5f6b7d">android 3.46%</td>
+          </tr>
+          <tr style="color:#5f6b7d">
+            <td style="padding:3px 0">after the incident</td>
+            <td style="text-align:right"><b style="display:inline;color:#d93025">ios 0.63%</b></td>
+            <td style="text-align:right">web 4.02%</td>
+            <td style="text-align:right">android 3.46%</td>
+          </tr>
+          <tr style="border-top:1px solid #eef1f6">
+            <td style="padding:5px 0;color:#d93025">agent rolls back deployment 8472</td>
+            <td colspan="3" style="text-align:right;color:#d93025">
+              tool reports success &nbsp;·&nbsp; <b style="display:inline">ios still 0.77% — hypothesis rejected</b></td>
+          </tr>
+          <tr>
+            <td style="padding:3px 0;color:#1e8e4e">agent restores the configuration</td>
+            <td colspan="3" style="text-align:right;color:#1e8e4e">
+              <b style="display:inline">ios 3.84% &nbsp;·&nbsp; PAY_CFG_3021 errors → 0 &nbsp;·&nbsp; verified</b></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <div class="svc">
+        <h3>VERTEX AI</h3>
+        <div class="box hi"><b>gemini-3.5-flash</b>
+          <div class="d">All reasoning and tool selection. Reached through ADK, so inference stays
+          inside Google Cloud and appears in Vertex AI logs.</div></div>
+        <div class="arrow" style="margin:7px 0">◀ ▶<small>tool calls · results</small></div>
+      </div>
+
+      <div class="svc" style="margin-top:14px">
+        <h3>CLOUD BUILD</h3>
+        <div class="box"><b>Source → container</b>
+          <div class="d">Builds from source on deploy. The simulated history is generated at build
+          time so the first mission starts instantly.</div></div>
+      </div>
+
+      <div class="svc" style="margin-top:14px">
+        <h3>CLOUD LOGGING</h3>
+        <div class="box"><b>Mission &amp; request logs</b>
+          <div class="d">Every tool call, denial and remediation is on the evidence ledger and in
+          Cloud Logging.</div></div>
+      </div>
+
+      <div class="svc req" style="margin-top:14px;border:none;border-left:3px solid #1e8e4e;border-radius:0">
+        <div class="k" style="font-size:11px;letter-spacing:1.2px;color:#8593a8;margin-bottom:5px">
+          HACKATHON REQUIREMENTS</div>
+        <ul style="list-style:none;font-size:12px;line-height:1.75">
+          <li>✓ Gemini 3.5 or newer — <b>gemini-3.5-flash</b></li>
+          <li>✓ Google agent framework — <b>Google ADK 2.7</b></li>
+          <li>✓ Google Cloud service — <b>Cloud Run</b>, Vertex AI, Cloud Build, Cloud Logging</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div style="margin-top:16px">
+  <div style="font-size:11px;letter-spacing:1.2px;color:#8593a8;margin-bottom:6px">
+    THE MISSION LOOP — what makes it an agent rather than an assistant</div>
+  <div class="loop">
+    <div class="step"><b>OBJECTIVE</b><div class="d">one sentence from a human</div></div>
+    <div class="lsep">→</div>
+    <div class="step"><b>SURVEY</b><div class="d">slice every dimension in parallel</div></div>
+    <div class="lsep">→</div>
+    <div class="step"><b>HYPOTHESISE</b><div class="d">competing causes, with confidence</div></div>
+    <div class="lsep">→</div>
+    <div class="step"><b>ACT</b><div class="d">smallest reversible remediation</div></div>
+    <div class="lsep">→</div>
+    <div class="step"><b>WAIT</b><div class="d">let real traffic accumulate</div></div>
+    <div class="lsep">→</div>
+    <div class="step"><b>VERIFY</b><div class="d">against the business metric</div></div>
+    <div class="lsep">→</div>
+    <div class="step pass"><b>RECOVERED</b><div class="d">conclude with evidence</div></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-top:7px">
+    <div style="flex:0 0 auto;font-size:11.5px;color:#d93025;font-weight:700">NOT RECOVERED ↻</div>
+    <div style="flex:1;border-top:2px dashed #d93025"></div>
+    <div style="flex:0 0 auto;font-size:11.5px;color:#5f6b7d">
+      reject the hypothesis · never repeat a failed action · re-investigate · try another cause
+    </div>
+  </div>
+</div>
+
+<div class="foot">
+  <div>
+    <div class="k">DESIGN RULES</div>
+    <ul>
+      <li>A tool reporting success is <b>not</b> evidence the problem is solved.</li>
+      <li>Verification tools return numbers and sample sizes, never a verdict.</li>
+      <li>Every action requires a stated reason before it runs.</li>
+      <li>Actions are recorded by the framework, not by the agent reporting them.</li>
+    </ul>
+  </div>
+  <div>
+    <div class="k">WHAT IS MEASURED</div>
+    <ul>
+      <li>Root-cause accuracy, correct remediation, real metric recovery.</li>
+      <li><b>False completion rate</b> — claimed success the numbers do not support. Target zero.</li>
+      <li>Unauthorised actions. Target zero.</li>
+      <li>Scored against a heuristic baseline on identical seeds.</li>
+    </ul>
+  </div>
+  <div>
+    <div class="k">SIX INCIDENTS, FIVE DIFFERENT ANSWERS</div>
+    <ul>
+      <li>config regression → restore config</li>
+      <li>bad deployment → <b>roll back</b> (here it is right)</li>
+      <li>feature flag → disable flag</li>
+      <li>provider outage → fail over</li>
+      <li>fraud over-blocking → raise threshold</li>
+      <li>pool exhaustion → restart service</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>
