@@ -456,3 +456,54 @@ Also replaced the heuristic's "most recently changed setting" rule with a
 plausibility score — whether the setting names the failing segment, whether the
 error text talks about it, whether its value appears in the logs. Configuration
 churns constantly, so recency alone is close to no evidence.
+
+---
+
+## Plan revision — Aug 21, after the Devpost organiser email
+
+Three things change.
+
+**1. Judges are not required to run the project.** They may score entirely from
+the video, the text description and the repo. The hosted URL is "highly
+encouraged" but is not where the marks are. Effort moves toward the video and
+the written artifacts, and away from anything that only pays off if someone
+runs the app themselves.
+
+**2. Proof it runs on Google Cloud is a hard requirement of the video** —
+Cloud Console, a Cloud Run dashboard, Vertex AI logs, or a visible `.run` URL.
+Deployment is therefore not polish that can be dropped under time pressure. It
+is a submission requirement, and it moves to the front of the remaining work.
+
+**3. This settles the credentials question.** Vertex AI logs are explicitly
+named as acceptable proof of Google Cloud. A plain Gemini API key goes through
+`generativelanguage.googleapis.com`, which is not Vertex and does not appear in
+Cloud Console as inference. Cloud Run alone would still satisfy the rule, but
+Vertex gives a second and stronger proof and lets the video show inference
+running inside Google Cloud. **When the credit project lands, use Vertex on it.**
+The API-key fallback stays available for schedule safety, at the cost of that
+second proof.
+
+### Required artifacts, confirmed
+
+| artifact | requirement |
+|---|---|
+| Demo video | ≤4 min (only the first four are watched), public on YouTube/Vimeo, English or subtitled. Must name the Gemini model and the agent framework out loud, show the agent really working, and show Google Cloud proof. |
+| Architecture diagram | Required upload. Must show how Gemini connects to the backend, where state lives, which Google Cloud services run. |
+| README | Spin-up instructions written for a stranger starting from scratch. |
+| Repo | Public, or private with access for testing@devpost.com and cloudhackathons@google.com. Verify the link opens in an incognito window. |
+| Submission form | Save a draft early. Asks for hosted URL, which Google SDK, whether the README has reproducible testing instructions, and the project start date. |
+
+**After the deadline the submission is locked — the repo, video and linked
+material must not be touched until winners are announced.** Submitting on Aug 29
+therefore means freezing on Aug 29, not continuing to tinker.
+
+### Revised order of remaining work
+
+| when | what | needs model? |
+|---|---|---|
+| next | Dockerfile, Cloud Run deploy, Cloud SQL, public URL | no |
+| next | Architecture diagram + README | no |
+| next | Devpost submission draft saved | no |
+| on credentials | Days 3–4 agent-quality gates, LLM vs baseline evaluation | **yes** |
+| then | Record the demo video | yes |
+| Aug 29 | Submit, then freeze | — |
