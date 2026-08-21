@@ -133,13 +133,20 @@ class ToolEnv:
 
 _env: ContextVar[ToolEnv | None] = ContextVar("fixer_tool_env", default=None)
 
+# ContextVars do not cross into worker threads, and ADK can be configured to run
+# tools in a thread pool. This is the fallback for that case. It is only correct
+# for one mission at a time in a process, so the ContextVar is always preferred.
+_last_env: ToolEnv | None = None
+
 
 def set_env(env: ToolEnv) -> None:
+    global _last_env
     _env.set(env)
+    _last_env = env
 
 
 def get_env() -> ToolEnv:
-    env = _env.get()
+    env = _env.get() or _last_env
     if env is None:
         raise RuntimeError("No ToolEnv bound; a mission must be running.")
     return env

@@ -43,11 +43,17 @@ async def run_oracle(
     world: World,
     objective: str,
     *,
+    mission: Mission | None = None,
     fast_forward: bool = True,
     guard=None,
 ) -> AsyncIterator[tuple[MissionEvent, Mission]]:
-    """Run the heuristic agent, yielding events as it goes."""
-    mission = Mission(
+    """Run the heuristic agent, yielding events as it goes.
+
+    Accepts a caller-supplied Mission so that whatever is watching the run --
+    Mission Control, the evaluation harness -- holds the same object the agent
+    is writing into, rather than a copy that never updates.
+    """
+    mission = mission or Mission(
         objective=objective,
         success_criteria=[
             "root cause identified",

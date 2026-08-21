@@ -16,6 +16,7 @@ numbers do not move.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import random
@@ -189,6 +190,11 @@ class World(inc.WorldWriter):
         self._pending: list[tuple[type, dict]] = []
         # When set, the sim clock ignores wall time. See freeze().
         self._frozen_now: datetime | None = None
+        # Generation must not run twice concurrently. Mission Control polls
+        # metrics while the agent is working, so tick() is genuinely reentrant
+        # from two tasks; without this both generate the same minute range and
+        # collide on primary keys.
+        self._gen_lock = asyncio.Lock()
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -316,12 +322,16 @@ class World(inc.WorldWriter):
         sc = self.scenario
         if sc is None or sc.generated_to is None:
             return
-        target = self.now()
-        if target <= sc.generated_to:
-            return
-        await self._generate(sc.generated_to, target)
-        sc.generated_to = target
-        await self._save_scenario()
+        if self.now() <= sc.generated_to:
+            return  # fast path, no lock needed
+        async with self._gen_lock:
+            # Re-check: another task may have caught up while we waited.
+            target = self.now()
+            if target <= sc.generated_to:
+                return
+            await self._generate(sc.generated_to, target)
+            sc.generated_to = target
+            await self._save_scenario()
 
     # -- agent actions ------------------------------------------------------
 

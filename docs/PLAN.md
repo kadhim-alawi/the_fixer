@@ -371,3 +371,47 @@ a bad cache rebuilds itself rather than poisoning every run.
 incident it is, so it is generated once and cached: **36.7s cold, 2.7s warm.**
 That was blocking both the evaluation batch and the demo's "Start Mission"
 click.
+
+### Day 6 (pulled forward) — Aug 21 — DONE, gate passed
+
+Mission Control is built and running: FastAPI + SSE backend, React console, one
+deployable unit. Verified end to end against a live mission, with screenshots in
+`docs/shots/`.
+
+Deliberately an operations console, not a chat window — dense, monospaced, dark,
+everything visible at once. A judge should never mistake it for a chatbot with a
+nicer theme, and should never wonder where to look.
+
+The single most valuable element is the conversion chart. It carries the whole
+argument in one picture: the affected platform's line falls away from the
+others, a red marker shows where a remediation was applied and the line *stays
+down*, a green marker shows the second remediation and the line comes back.
+Nobody has to be told the first fix failed — they watch it fail.
+
+Also on screen: the live timeline; hypotheses with confidence bars, rejected
+ones struck through; evidence counters (FAILED FIX in red, RECOVERED in green);
+remediations tagged EFFECTIVE/INEFFECTIVE; and the conclusion with root cause
+and measured before-and-after. The approval modal is wired for Day 7.
+
+**Two real bugs found by actually looking at it:**
+
+1. **A concurrency bug that would have broken the live demo.** Mission Control
+   polls metrics while the agent works, so `tick()` ran from two tasks at once,
+   both generated the same minute range, and the inserts collided on primary
+   keys — `UNIQUE constraint failed: sessions.id`, returned as a 500 to the
+   console mid-mission. Generation is now serialised behind a lock with a
+   re-check inside it.
+
+2. **The chart was too noisy to read.** Each 7-minute bucket held only a few
+   hundred sessions per platform, so the lines jittered ~20% on sampling noise
+   and the actual drop was hard to pick out. Points are now a trailing
+   30-minute rolling rate — which is also simply what an operations dashboard
+   shows.
+
+Also written: `agent/llm.py`, the model-driven mission runner. Same world, same
+tools, same Mission object as the heuristic agent, so the only difference
+between them is who decides what to do next — which is what the evaluation is
+trying to measure. Includes `max_llm_calls` so an agent looping without
+converging terminates as SAFETY_LIMIT rather than running forever, and a
+per-tool result summariser so the timeline shows the number that mattered
+rather than a wall of JSON.
