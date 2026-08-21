@@ -14,7 +14,6 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
-    Index,
     Integer,
     String,
     Text,
@@ -32,9 +31,12 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Only `ts` is indexed. Every query filters a time range first and then
+    # groups, so standalone platform/region indexes are never chosen by the
+    # planner -- and at 450k rows they cost 15MB for nothing.
     ts: Mapped[datetime] = mapped_column(DateTime, index=True)
-    platform: Mapped[str] = mapped_column(String(16), index=True)  # web|ios|android
-    region: Mapped[str] = mapped_column(String(8), index=True)
+    platform: Mapped[str] = mapped_column(String(16))  # web|ios|android
+    region: Mapped[str] = mapped_column(String(8))
     traffic_source: Mapped[str] = mapped_column(String(16))
     app_version: Mapped[str] = mapped_column(String(16))
 
@@ -46,9 +48,6 @@ class Session(Base):
 
     # Set when checkout_started but not converted.
     abandon_stage: Mapped[str | None] = mapped_column(String(24), nullable=True)
-
-
-Index("ix_sessions_ts_platform", Session.ts, Session.platform)
 
 
 class Order(Base):

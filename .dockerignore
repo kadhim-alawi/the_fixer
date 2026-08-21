@@ -1,0 +1,12 @@
+.venv/
+.git/
+.worldcache/
+missions/
+node_modules/
+frontend/dist/
+frontend/node_modules/
+**/__pycache__/
+*.db
+docs/shots/
+eval_results.json
+.env

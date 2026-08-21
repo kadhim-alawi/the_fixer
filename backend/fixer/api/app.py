@@ -160,7 +160,9 @@ if FRONTEND.exists():
 def main() -> None:
     import uvicorn
 
-    os.makedirs("missions", exist_ok=True)
+    from .missions import MISSION_DIR
+
+    MISSION_DIR.mkdir(parents=True, exist_ok=True)
     uvicorn.run(
         "fixer.api.app:app",
         host="0.0.0.0",

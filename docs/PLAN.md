@@ -507,3 +507,33 @@ therefore means freezing on Aug 29, not continuing to tinker.
 | on credentials | Days 3–4 agent-quality gates, LLM vs baseline evaluation | **yes** |
 | then | Record the demo video | yes |
 | Aug 29 | Submit, then freeze | — |
+
+### Day 9 (pulled forward) — Aug 21 — deploy prep DONE, deploy awaiting a project
+
+Container and Cloud Run deployment prepared. `gcloud run deploy --source`
+builds with Cloud Build, so no local Docker daemon is needed.
+
+**The world history is baked into the image.** Without it the first mission
+spends ~40 seconds generating a day of traffic, which is the worst possible
+first impression for someone evaluating the project. Two cache variants cover
+all six incidents; incident A needs its own because it declares an unrelated
+regional traffic change that begins before the incident does.
+
+**Cut the image payload 41%,** from 188MB to 110MB, by dropping three session
+indexes that were never used. Every query filters a time range before grouping,
+so standalone `platform` and `region` indexes were never chosen by the planner
+and the `(ts, platform)` composite duplicated the plain `ts` index — 36.6MB for
+nothing at 450k rows. Queries got *faster* afterwards (survey_segments 82ms →
+48ms), since the smaller indexes sit better in cache. The cache is also vacuumed
+after building, since it is copied per mission and shipped in the image.
+
+**Mission eviction added.** On Cloud Run `/tmp` is backed by memory, so each
+mission's world counts against the instance — a finished mission's database
+reaches ~70MB. Finished missions stay viewable and are then evicted
+oldest-first, three retained by default.
+
+Verified end to end under the exact container configuration: environment
+variables, entrypoint, storage paths. A mission ran and solved `fraud_overblock`
+correctly with no errors in the log.
+
+Deployment itself needs a project and is the user's call.

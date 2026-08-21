@@ -9,7 +9,9 @@ afterwards.
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
+from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -21,6 +23,13 @@ from ..agent import model as model_cfg
 from ..mission import Mission, MissionStatus
 from ..sim.schema import Session
 from ..sim.world import World, build_world
+
+MISSION_DIR = Path(os.environ.get("FIXER_MISSION_DIR", "./missions"))
+
+# On Cloud Run /tmp is backed by memory, so each mission's ~55MB world counts
+# against the instance. Finished missions stay viewable for a while and are then
+# evicted oldest-first.
+MAX_RETAINED_MISSIONS = int(os.environ.get("FIXER_MAX_MISSIONS", "3"))
 
 OBJECTIVE = (
     "Our conversion rate has dropped significantly today. "
@@ -124,8 +133,9 @@ class MissionManager:
         agent: str | None = None,
     ) -> MissionSession:
         mid = f"m-{uuid.uuid4().hex[:8]}"
+        MISSION_DIR.mkdir(parents=True, exist_ok=True)
         engine, world = await build_world(
-            f"./missions/{mid}.db",
+            str(MISSION_DIR / f"{mid}.db"),
             incident_key=incident_key,
             seed=seed,
             speed=speed,
@@ -151,7 +161,23 @@ class MissionManager:
         )
         self.sessions[mid] = s
         s.task = asyncio.create_task(self._run(s))
+        await self._evict_old()
         return s
+
+    async def _evict_old(self) -> None:
+        """Drop the oldest finished missions once too many are held."""
+        finished = [x for x in self.sessions.values() if x.state in ("done", "error")]
+        while len(self.sessions) > MAX_RETAINED_MISSIONS and finished:
+            victim = finished.pop(0)
+            self.sessions.pop(victim.id, None)
+            try:
+                await victim.engine.dispose()
+            except Exception:
+                pass
+            try:
+                (MISSION_DIR / f"{victim.id}.db").unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def get(self, mid: str) -> MissionSession | None:
         return self.sessions.get(mid)

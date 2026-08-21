@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -767,7 +768,10 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import create_async_engine
 
-CACHE_DIR = Path(".worldcache")
+# Cloud Run gives a container a read-only image and a writable /tmp, so these
+# are configurable. Locally they default to the repo so a rebuild is not needed
+# between runs.
+CACHE_DIR = Path(os.environ.get("FIXER_CACHE_DIR", ".worldcache"))
 
 
 def _clone(src: Path, dst: Path) -> None:
@@ -787,6 +791,16 @@ def _clone(src: Path, dst: Path) -> None:
             target.close()
     finally:
         source.close()
+
+
+def _compact(path: Path) -> None:
+    """Reclaim free pages. The cache is copied per mission and shipped in the
+    container image, so its size is paid for repeatedly."""
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("VACUUM")
+    finally:
+        conn.close()
 
 
 def _healthy(path: Path) -> bool:
@@ -858,6 +872,7 @@ async def build_world(
         await world.start_scenario(history_only=True, **kw)
         await engine.dispose()
         _clone(tmp, cache)
+        _compact(cache)
         tmp.unlink()
 
     _clone(cache, db)
