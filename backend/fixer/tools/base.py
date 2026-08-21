@@ -15,6 +15,7 @@ Design rules for every tool in this package:
 
 from __future__ import annotations
 
+import inspect
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -104,7 +105,9 @@ class ToolEnv:
     mission: Mission | None = None
     calls: list[ToolCall] = field(default_factory=list)
     # Set by the safety gate (Day 7) to block a call before it executes.
-    guard: Callable[[ToolMeta, dict], str | None] | None = None
+    # Returns None to allow, or a string explaining the refusal. May be async,
+    # in which case it can pause the agent while a human decides.
+    guard: Callable[[ToolMeta, dict], Any] | None = None
     # Evaluation runs hundreds of missions and cannot spend real time
     # waiting; when true, waits jump the sim clock instead of sleeping.
     fast_forward: bool = False
@@ -163,6 +166,11 @@ async def invoke(name: str, args: dict, body: Callable) -> dict:
 
     if env.guard is not None:
         denial = env.guard(meta, args)
+        if inspect.isawaitable(denial):
+            # An async guard may block here while a human decides. The agent is
+            # genuinely paused mid-action, which is the point: a high-risk step
+            # does not happen and then get reported, it waits.
+            denial = await denial
         if denial:
             result = {"error": "not_permitted", "reason": denial}
             env.record(name, args, result, 0, denied=denial)

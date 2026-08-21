@@ -72,7 +72,7 @@ async def main() -> int:
     for b in bad:
         print(f"  FAIL {b}")
     checks["every tool produces an ADK declaration"] = not bad
-    checks["tool count matches the registry"] = len(T.ALL_TOOLS) == len(T.REGISTRY) == 24
+    checks["tool count matches the registry"] = len(T.ALL_TOOLS) == len(T.REGISTRY) == 25
 
     # -- 2. execute against a live world -----------------------------------
     head("2. Live execution against NovaCart")

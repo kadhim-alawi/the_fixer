@@ -28,9 +28,15 @@ OBJECTIVE = (
 )
 
 
+# How long the agent waits for an operator before giving up on a high-risk
+# action. It must be finite: an agent blocked forever on a dialog nobody is
+# watching is a hang, not a safety feature.
+APPROVAL_TIMEOUT_SECONDS = 180
+
+
 @dataclass
 class Approval:
-    """A high-risk action waiting on a human."""
+    """A high-risk action, paused, waiting on a human."""
 
     id: str
     tool: str
@@ -40,6 +46,12 @@ class Approval:
     reason: str
     decided: bool = False
     approved: bool = False
+    timed_out: bool = False
+    # Not serialisable, and not anyone else's business.
+    event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+
+    def payload(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if k != "event"}
 
 
 @dataclass
@@ -90,8 +102,9 @@ class MissionSession:
             "error": self.error,
             "mission": self.mission.as_dict(),
             "pending_approval": (
-                self.pending_approval.__dict__ if self.pending_approval else None
+                self.pending_approval.payload() if self.pending_approval else None
             ),
+            "approvals": [a.payload() for a in self.approvals],
             "sim_time": self.world.now().isoformat(timespec="seconds")
             if self.world.scenario
             else None,
@@ -146,25 +159,26 @@ class MissionManager:
     # -- the approval gate --------------------------------------------------
 
     def _guard(self, s: MissionSession):
-        """Refuse high-risk actions until a human says otherwise.
+        """Pause a high-risk action and put it in front of a human.
 
-        The agent is told plainly why it was refused and that it may continue
-        without that action -- a blocked tool should redirect it, not strand it.
+        The agent does not take the action and report it afterwards -- it stops,
+        mid-action, and waits. That is the difference between an audit log and a
+        control.
+
+        The wait is bounded. If nobody answers, the action is refused and the
+        agent is told why, so an unattended mission degrades into "carried on
+        without the dangerous step" rather than hanging.
         """
 
-        def guard(meta: T.ToolMeta, args: dict) -> str | None:
+        async def guard(meta: T.ToolMeta, args: dict) -> str | None:
             if not meta.requires_approval:
                 return None
-            decided = next(
-                (
-                    a
-                    for a in s.approvals
-                    if a.tool == meta.name and a.decided and a.approved
-                ),
-                None,
-            )
-            if decided:
+
+            # An operator who already approved this tool does not get asked
+            # again for the same mission.
+            if any(a.tool == meta.name and a.decided and a.approved for a in s.approvals):
                 return None
+
             ap = Approval(
                 id=f"ap-{uuid.uuid4().hex[:6]}",
                 tool=meta.name,
@@ -176,16 +190,31 @@ class MissionManager:
             s.approvals.append(ap)
             s.pending_approval = ap
             s.publish(
-                {
-                    "type": "approval_required",
-                    "approval": ap.__dict__,
-                    "snapshot": s.snapshot(),
-                }
+                {"type": "approval_required", "approval": ap.payload(), "snapshot": s.snapshot()}
             )
+
+            try:
+                await asyncio.wait_for(ap.event.wait(), timeout=APPROVAL_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                ap.decided, ap.approved, ap.timed_out = True, False, True
+                s.pending_approval = None
+                s.publish(
+                    {"type": "approval_timeout", "approval": ap.payload(), "snapshot": s.snapshot()}
+                )
+                return (
+                    f"{meta.name} is {meta.risk} risk and {meta.reversibility}, so it "
+                    f"needs an operator's approval. None was given within "
+                    f"{APPROVAL_TIMEOUT_SECONDS} seconds, so it was not carried out. "
+                    "Continue without it, or end the mission as REQUIRES_HUMAN if you "
+                    "cannot achieve the objective without it."
+                )
+
+            if ap.approved:
+                return None
             return (
-                f"{meta.name} is {meta.risk} risk and {meta.reversibility}. "
-                "It needs a human operator's approval, which has not been given. "
-                "Continue without it."
+                f"An operator reviewed {meta.name} and rejected it. Do not attempt it "
+                "again. Continue without it, or end the mission as REQUIRES_HUMAN if "
+                "you cannot achieve the objective without it."
             )
 
         return guard
@@ -200,10 +229,11 @@ class MissionManager:
         ap.decided, ap.approved = True, approved
         if s.pending_approval and s.pending_approval.id == approval_id:
             s.pending_approval = None
+        ap.event.set()  # releases the paused agent
         s.publish(
             {
                 "type": "approval_decided",
-                "approval": ap.__dict__,
+                "approval": ap.payload(),
                 "snapshot": s.snapshot(),
             }
         )
@@ -248,6 +278,9 @@ class MissionManager:
             s.error = f"{type(exc).__name__}: {exc}"
             s.publish({"type": "error", "error": s.error, "snapshot": s.snapshot()})
         finally:
+            for a in s.approvals:
+                a.event.set()
+            s.pending_approval = None
             if s.state != "error":
                 s.state = "done"
             s.publish({"type": "finished", "snapshot": s.snapshot()})

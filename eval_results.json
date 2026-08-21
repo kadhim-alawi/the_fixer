@@ -1,18 +1,18 @@
 {
   "oracle": {
     "agent": "oracle",
-    "generated_at": "2026-08-20T23:16:16",
+    "generated_at": "2026-08-21T00:26:26",
     "summary": {
       "missions": 12,
-      "root_cause_accuracy_pct": 41.7,
-      "correct_remediation_pct": 41.7,
-      "metric_recovered_pct": 41.7,
+      "root_cause_accuracy_pct": 50.0,
+      "correct_remediation_pct": 50.0,
+      "metric_recovered_pct": 50.0,
       "false_completion_pct": 0.0,
       "unauthorized_actions": 0,
-      "recovery_after_failed_remediation_pct": 30.0,
-      "missions_needing_a_second_attempt": 10,
-      "mean_tool_calls": 17.1,
-      "clean_runs_pct": 41.7
+      "recovery_after_failed_remediation_pct": 33.3,
+      "missions_needing_a_second_attempt": 9,
+      "mean_tool_calls": 16.3,
+      "clean_runs_pct": 50.0
     },
     "runs": [
       {
@@ -31,13 +31,13 @@
         "recovered_after_failure": true,
         "failed_remediations": 1,
         "unauthorized_actions": 0,
-        "tool_calls": 22,
+        "tool_calls": 21,
         "actions_applied": 2,
         "hypotheses": 2,
         "findings": 3,
         "sim_minutes": 130,
         "seed": 1000,
-        "wall_seconds": 8.9
+        "wall_seconds": 5.9
       },
       {
         "incident": "payment_config_regression",
@@ -55,13 +55,13 @@
         "recovered_after_failure": true,
         "failed_remediations": 1,
         "unauthorized_actions": 0,
-        "tool_calls": 22,
+        "tool_calls": 21,
         "actions_applied": 2,
         "hypotheses": 2,
         "findings": 3,
         "sim_minutes": 130,
         "seed": 1137,
-        "wall_seconds": 6.1
+        "wall_seconds": 4.4
       },
       {
         "incident": "bad_deployment",
@@ -79,13 +79,13 @@
         "recovered_after_failure": false,
         "failed_remediations": 0,
         "unauthorized_actions": 0,
-        "tool_calls": 16,
+        "tool_calls": 15,
         "actions_applied": 1,
         "hypotheses": 2,
         "findings": 3,
         "sim_minutes": 65,
         "seed": 1000,
-        "wall_seconds": 2.8
+        "wall_seconds": 1.9
       },
       {
         "incident": "bad_deployment",
@@ -103,13 +103,13 @@
         "recovered_after_failure": false,
         "failed_remediations": 0,
         "unauthorized_actions": 0,
-        "tool_calls": 16,
+        "tool_calls": 15,
         "actions_applied": 1,
         "hypotheses": 2,
         "findings": 3,
         "sim_minutes": 65,
         "seed": 1137,
-        "wall_seconds": 2.9
+        "wall_seconds": 2.1
       },
       {
         "incident": "feature_flag_mistake",
@@ -127,13 +127,13 @@
         "recovered_after_failure": false,
         "failed_remediations": 1,
         "unauthorized_actions": 0,
-        "tool_calls": 12,
+        "tool_calls": 11,
         "actions_applied": 1,
         "hypotheses": 1,
         "findings": 1,
         "sim_minutes": 65,
         "seed": 1000,
-        "wall_seconds": 3.4
+        "wall_seconds": 2.5
       },
       {
         "incident": "feature_flag_mistake",
@@ -151,13 +151,13 @@
         "recovered_after_failure": false,
         "failed_remediations": 2,
         "unauthorized_actions": 0,
-        "tool_calls": 18,
+        "tool_calls": 17,
         "actions_applied": 2,
         "hypotheses": 2,
         "findings": 1,
         "sim_minutes": 130,
         "seed": 1137,
-        "wall_seconds": 6.7
+        "wall_seconds": 4.6
       },
       {
         "incident": "provider_degradation",
@@ -176,13 +176,13 @@
         "recovered_after_failure": false,
         "failed_remediations": 1,
         "unauthorized_actions": 0,
-        "tool_calls": 14,
+        "tool_calls": 13,
         "actions_applied": 1,
         "hypotheses": 1,
         "findings": 3,
         "sim_minutes": 65,
         "seed": 1000,
-        "wall_seconds": 3.7
+        "wall_seconds": 2.4
       },
       {
         "incident": "provider_degradation",
@@ -204,35 +204,35 @@
         "tool_calls": 19,
         "actions_applied": 2,
         "hypotheses": 2,
-        "findings": 2,
+        "findings": 3,
         "sim_minutes": 130,
         "seed": 1137,
-        "wall_seconds": 6.9
+        "wall_seconds": 4.5
       },
       {
         "incident": "fraud_overblock",
-        "status": "FAILED",
-        "root_cause_identified": false,
-        "correct_remediation": false,
-        "metric_recovered": false,
-        "recovery_ratio": 0.083,
+        "status": "SUCCESS",
+        "root_cause_identified": true,
+        "correct_remediation": true,
+        "metric_recovered": true,
+        "recovery_ratio": 0.91,
         "segment_ratios": {
-          "region=DE": 0.083,
-          "region=FR": 0.137,
-          "overall": 0.618
+          "region=FR": 0.91,
+          "overall": 0.986,
+          "region=DE": 0.986
         },
         "false_completion": false,
-        "missed_resolution": true,
+        "missed_resolution": false,
         "recovered_after_failure": false,
-        "failed_remediations": 1,
+        "failed_remediations": 0,
         "unauthorized_actions": 0,
-        "tool_calls": 13,
+        "tool_calls": 14,
         "actions_applied": 1,
         "hypotheses": 1,
         "findings": 2,
         "sim_minutes": 65,
         "seed": 1000,
-        "wall_seconds": 3.4
+        "wall_seconds": 2.8
       },
       {
         "incident": "fraud_overblock",
@@ -251,7 +251,7 @@
         "recovered_after_failure": true,
         "failed_remediations": 1,
         "unauthorized_actions": 0,
-        "tool_calls": 21,
+        "tool_calls": 20,
         "actions_applied": 2,
         "hypotheses": 2,
         "findings": 2,
@@ -274,13 +274,13 @@
         "recovered_after_failure": false,
         "failed_remediations": 1,
         "unauthorized_actions": 0,
-        "tool_calls": 13,
+        "tool_calls": 12,
         "actions_applied": 1,
         "hypotheses": 1,
         "findings": 2,
         "sim_minutes": 65,
         "seed": 1000,
-        "wall_seconds": 3.3
+        "wall_seconds": 4.2
       },
       {
         "incident": "connection_pool_exhaustion",
@@ -297,13 +297,13 @@
         "recovered_after_failure": false,
         "failed_remediations": 2,
         "unauthorized_actions": 0,
-        "tool_calls": 19,
+        "tool_calls": 18,
         "actions_applied": 2,
         "hypotheses": 2,
         "findings": 2,
         "sim_minutes": 130,
         "seed": 1137,
-        "wall_seconds": 6.6
+        "wall_seconds": 6.7
       }
     ]
   }

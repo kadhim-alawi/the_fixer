@@ -86,9 +86,12 @@ async def run_oracle(
         tool="check_conversion",
     ), mission
 
-    funnel = await T.read.query_conversion_funnel(window_minutes=60, split_by="platform")
-    segments = [s for s in funnel.get("segments", []) if s["sessions"] > 300]
-    if not segments:
+    # One parallel sweep across every dimension, rather than guessing which one
+    # to split by. Guessing "platform" is what makes a shallow investigation
+    # miss a fault that lives in region.
+    survey = await T.read.survey_segments(window_minutes=60)
+    ranking = survey.get("unevenness_ranking", [])
+    if not ranking:
         mission.conclude(
             MissionStatus.INSUFFICIENT_EVIDENCE, "", "Not enough traffic to segment.", "",
             world.now().isoformat(timespec="seconds"),
@@ -96,43 +99,54 @@ async def run_oracle(
         yield emit("message", "Insufficient traffic to investigate."), mission
         return
 
-    worst = min(segments, key=lambda s: s["conversion_rate_pct"] or 0)
-    healthy = [s for s in segments if s is not worst]
-    healthy_avg = sum(s["conversion_rate_pct"] or 0 for s in healthy) / max(1, len(healthy))
-    isolated = (worst["conversion_rate_pct"] or 0) < healthy_avg * 0.6
-    platform = worst["platform"]
+    top = ranking[0]
+    isolated = top["unevenness"] >= 0.30
+    dimension = top["dimension"]
+    # app_version is a proxy for platform -- every version belongs to one
+    # platform. When both look equally uneven, the coarser one is the real
+    # story and the more actionable finding.
+    if isolated:
+        plat = next((r for r in ranking if r["dimension"] == "platform"), None)
+        if plat and dimension == "app_version" and top["unevenness"] - plat["unevenness"] < 0.08:
+            dimension = "platform"
+
+    segs = survey.get(dimension, {}).get("segments", [])
+    worst = segs[0] if segs else None
+    segment = worst["segment"] if worst else None
+    platform = segment if dimension == "platform" else None
+    others = [s["conversion_rate_pct"] or 0 for s in segs[1:]]
+    healthy_avg = sum(others) / len(others) if others else 0.0
 
     await T.reason.record_finding(
         summary=(
-            f"{platform} conversion is {worst['conversion_rate_pct']}% against "
-            f"{healthy_avg:.2f}% on other platforms"
-            if isolated
-            else "conversion is down across all platforms"
+            f"{dimension}={segment} conversion is {worst['conversion_rate_pct']}% "
+            f"against {healthy_avg:.2f}% for the rest"
+            if isolated and worst
+            else "conversion is down evenly across all segments"
         ),
-        detail=f"checkout completion {platform}={worst['checkout_completion_pct']}%, "
-        f"sessions={worst['sessions']}",
+        detail="unevenness: "
+        + ", ".join(f"{r['dimension']}={r['unevenness']}" for r in ranking),
     )
     yield emit(
         "thought",
-        f"Problem is {'isolated to ' + platform if isolated else 'platform-wide'}.",
+        f"Problem is {f'concentrated in {dimension}={segment}' if isolated else 'spread evenly'}.",
     ), mission
 
     # -- 2. What does the failure look like? --------------------------------
-    pay = await T.read.query_payments(window_minutes=60, split_by="platform")
     unusual = [
-        c for c in pay["failures_by_error_code"]
+        c for c in survey["payment_failures"]["by_error_code"]
         if c["error_code"] not in ORDINARY and c["count"] > 5
     ]
     signature = unusual[0]["error_code"] if unusual else None
     if signature:
         await T.reason.record_finding(
             summary=f"payment error {signature} occurring {unusual[0]['count']} times/hour",
-            detail=f"not an ordinary decline code; failure_rate={pay['failure_rate_pct']}%",
+            detail="not an ordinary decline code",
         )
         yield emit("thought", f"Unusual payment failure signature: {signature}"), mission
 
     logs = await T.read.query_logs(
-        window_minutes=60, level="ERROR", platform=platform if isolated else "", limit=5
+        window_minutes=60, level="ERROR", platform=platform or "", limit=5
     )
     log_text = " ".join(s["message"] for s in logs.get("samples", []))
     # Log lines name the component or setting involved; pull out quoted tokens.
@@ -151,14 +165,29 @@ async def run_oracle(
 
     cfg = await T.read.query_configuration(changed_within_hours=24)
     changed = [c for c in cfg["entries"] if c["changed"]]
-    # Prefer a changed key that mentions the affected segment, then one whose new
-    # value appears in the error logs.
-    candidates = [c for c in changed if isolated and platform in c["key"]]
-    if not candidates and named:
-        candidates = [c for c in changed if c["value"] in named]
-    if not candidates:
-        candidates = changed
-    top_config = candidates[0] if candidates else None
+
+    # Score each recently-changed setting on whether it could plausibly produce
+    # the symptom we actually see, rather than just taking the most recent one.
+    # Configuration changes constantly, so recency alone is nearly no evidence.
+    log_words = set(re.findall(r"[a-z_]{4,}", log_text.lower()))
+
+    def plausibility(entry: dict) -> float:
+        key = entry["key"].lower()
+        score = 0.0
+        if segment and segment.lower() in key:
+            score += 3.0  # the setting names the exact segment that is failing
+        parts = set(re.split(r"[._]", key))
+        overlap = parts & log_words
+        score += 2.0 * len(overlap)  # the error text talks about this setting
+        if str(entry.get("value", "")).lower() in log_words:
+            score += 2.0
+        if signature and parts & set(signature.lower().split("_")):
+            score += 1.5
+        score += max(0.0, 1.0 - entry.get("minutes_ago", 9999) / 1440.0)
+        return score
+
+    scored = sorted(changed, key=plausibility, reverse=True)
+    top_config = scored[0] if scored else None
 
     if top_deploy:
         h1 = mission.add_hypothesis(
@@ -187,7 +216,7 @@ async def run_oracle(
     async def settle_and_check() -> tuple[bool, dict]:
         await T.verify.wait_for_traffic(minutes=SETTLE_MINUTES)
         chk = await T.verify.check_conversion(
-            window_minutes=VERIFY_WINDOW, platform=platform if isolated else "all"
+            window_minutes=VERIFY_WINDOW, platform=platform or "all"
         )
         cur = chk["current"]["rate_pct"] or 0
         ref = chk["reference_24h_ago"]["rate_pct"] or 0
@@ -214,7 +243,7 @@ async def run_oracle(
 
         await T.reason.assess_remediation(
             effective=ok,
-            metric_summary=f"{platform} conversion {chk['current']['rate_pct']}% "
+            metric_summary=f"{platform or 'overall'} conversion {chk['current']['rate_pct']}% "
             f"vs reference {chk['reference_24h_ago']['rate_pct']}%",
             note="rollback resolved the incident" if ok else
             "rollback did not restore conversion; the cause is elsewhere",
@@ -275,7 +304,7 @@ async def run_oracle(
 
     await T.reason.assess_remediation(
         effective=ok,
-        metric_summary=f"{platform} conversion {chk['current']['rate_pct']}% "
+        metric_summary=f"{platform or 'overall'} conversion {chk['current']['rate_pct']}% "
         f"vs reference {chk['reference_24h_ago']['rate_pct']}%",
         note="configuration restore resolved the incident" if ok else
         "configuration restore did not resolve the incident",
@@ -300,13 +329,13 @@ async def run_oracle(
         yield emit("message", "Unable to resolve; escalating."), mission
 
 
-async def _finish(mission: Mission, world: World, root_cause: str, chk: dict, platform: str) -> None:
+async def _finish(mission: Mission, world: World, root_cause: str, chk: dict, platform: str | None) -> None:
     err = await T.verify.check_error_rate(window_minutes=VERIFY_WINDOW, error_code="")
     await T.reason.conclude_mission(
         status="SUCCESS",
         root_cause=root_cause,
         evidence_summary="; ".join(f.summary for f in mission.findings),
-        before_after=f"{platform} conversion {chk['current']['rate_pct']}% "
+        before_after=f"{platform or 'overall'} conversion {chk['current']['rate_pct']}% "
         f"(reference {chk['reference_24h_ago']['rate_pct']}%), "
         f"failed payments now {err['current_count']}",
     )

@@ -415,3 +415,44 @@ trying to measure. Includes `max_llm_calls` so an agent looping without
 converging terminates as SAFETY_LIMIT rather than running forever, and a
 per-tool result summariser so the timeline shows the number that mattered
 rather than a wall of JSON.
+
+### Day 7 (pulled forward) — Aug 21 — DONE, gate passed
+
+Safety and parallelism. 16/16 in `scripts/smoke_day7.py`.
+
+**The approval gate now pauses the agent rather than refusing it.** The earlier
+version said no and let the agent carry on. That is an audit log, not a control.
+Now the agent stops mid-action and waits while a human decides — which is also
+the better demo moment: the modal states the action, its risk, whether it can be
+undone, and the agent's own stated reason for wanting it.
+
+The wait is bounded at 180 seconds. An agent blocked forever on a dialog nobody
+is watching is a hang, not a safety feature; on timeout the action is refused,
+the agent is told why, and it continues or ends as REQUIRES_HUMAN.
+
+**The gate is verified against the world, not against the agent's report.** The
+test asks the database: after a denied refund, are any orders refunded? Zero,
+and the failed-order count is unchanged. All three outcomes are covered —
+granted, rejected, nobody answered.
+
+**Added `survey_segments`**, one call that slices conversion by platform,
+region, traffic source and app version concurrently, alongside payment failures
+and service health. 82ms against 172ms for the same six queries sequentially.
+
+It exists because of a real failure the baseline exposed: the heuristic missed
+`fraud_overblock` entirely because it only ever split by platform, and that
+fault lives in region. The tool reports an unevenness *ranking* rather than
+naming a winner — these dimensions overlap, since every app version belongs to
+exactly one platform, so a platform-wide fault always makes app_version look
+uneven too and usually more so. Naming one "the answer" would be doing the
+agent's reasoning for it, and doing it wrong.
+
+**Baseline improved to 50% clean** (from 41.7%), still 0% false completions. It
+now solves `bad_deployment` and `fraud_overblock` reliably. It still fails the
+three that need actual reasoning: a fault with no failed payments at all, one
+where nothing changed on our side, and one visible only in latency.
+
+Also replaced the heuristic's "most recently changed setting" rule with a
+plausibility score — whether the setting names the failing segment, whether the
+error text talks about it, whether its value appears in the logs. Configuration
+churns constantly, so recency alone is close to no evidence.

@@ -7,6 +7,7 @@ descriptions are the most common reason an agent investigates badly.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from typing import Any
 
@@ -614,3 +615,147 @@ async def query_infrastructure(
         {"window_minutes": window_minutes, "ending_minutes_ago": ending_minutes_ago, "service": service},
         body,
     )
+
+
+@tool(kind="read", permission="READ")
+async def survey_segments(window_minutes: int = 60) -> dict:
+    """Slice conversion every way at once and report where it is uneven.
+
+    Runs the platform, region, traffic-source and app-version breakdowns
+    concurrently, alongside payment failures and service health, and reports
+    how uneven each dimension is.
+
+    Use this first. A problem confined to one slice of traffic is a far
+    narrower problem than one affecting everything, and the dimension it hides
+    in is not always the obvious one -- a fault can be invisible when split by
+    platform and glaring when split by region.
+
+    Args:
+        window_minutes: Length of the window to measure, in minutes.
+
+    Returns:
+        For each dimension, the segments with their conversion rates and
+        session counts, plus `unevenness` -- how far the worst segment sits
+        below the average, as a fraction -- and a ranking across dimensions.
+
+        Read the ranking carefully: these dimensions overlap. Every app version
+        belongs to exactly one platform, so a platform-wide fault also makes
+        app_version look uneven, usually more so because those segments are
+        smaller. The narrower explanation is not automatically the right one.
+
+        Segments below 250 sessions are ignored as too thin to judge.
+    """
+
+    async def body() -> dict:
+        w = get_env().world
+        start, end = window(w, window_minutes, 0)
+        where = and_(Session.ts >= start, Session.ts < end)
+
+        async def slice_by(dim: str, col) -> tuple[str, dict]:
+            # Each concurrent query needs its own session; an AsyncSession is
+            # not safe to share between tasks.
+            async with w.sf() as s:
+                rows = (
+                    await s.execute(
+                        select(
+                            col,
+                            func.count(Session.id),
+                            _i(Session.converted),
+                        )
+                        .where(where)
+                        .group_by(col)
+                    )
+                ).all()
+            segs = [
+                {"segment": v, "sessions": n, "conversion_rate_pct": pct(c, n)}
+                for v, n, c in rows
+                if n >= 250
+            ]
+            segs.sort(key=lambda x: x["conversion_rate_pct"] or 0)
+            rates = [x["conversion_rate_pct"] or 0 for x in segs]
+            avg = sum(rates) / len(rates) if rates else 0
+            uneven = round(1 - (rates[0] / avg), 3) if rates and avg else 0.0
+            return dim, {"unevenness": uneven, "segments": segs}
+
+        async def payments() -> tuple[str, dict]:
+            async with w.sf() as s:
+                codes = (
+                    await s.execute(
+                        select(Payment.error_code, func.count(Payment.id))
+                        .where(
+                            Payment.ts >= start,
+                            Payment.ts < end,
+                            Payment.status == "failed",
+                        )
+                        .group_by(Payment.error_code)
+                        .order_by(desc(func.count(Payment.id)))
+                        .limit(6)
+                    )
+                ).all()
+            return "payment_failures", {
+                "by_error_code": [{"error_code": c or "UNKNOWN", "count": n} for c, n in codes]
+            }
+
+        async def infra() -> tuple[str, dict]:
+            async with w.sf() as s:
+                rows = (
+                    await s.execute(
+                        select(
+                            ServiceHealth.service,
+                            func.avg(ServiceHealth.error_rate),
+                            func.avg(ServiceHealth.latency_p95_ms),
+                        )
+                        .where(ServiceHealth.ts >= start, ServiceHealth.ts < end)
+                        .group_by(ServiceHealth.service)
+                        .order_by(desc(func.avg(ServiceHealth.error_rate)))
+                    )
+                ).all()
+            return "services", {
+                "by_error_rate": [
+                    {
+                        "service": sv,
+                        "error_rate_mean": round(er or 0, 5),
+                        "latency_p95_mean_ms": int(lat or 0),
+                    }
+                    for sv, er, lat in rows
+                ]
+            }
+
+        results = await asyncio.gather(
+            slice_by("platform", Session.platform),
+            slice_by("region", Session.region),
+            slice_by("traffic_source", Session.traffic_source),
+            slice_by("app_version", Session.app_version),
+            payments(),
+            infra(),
+        )
+        out: dict = {
+            "window": {"minutes": window_minutes},
+            "queries_run_concurrently": len(results),
+        }
+        out.update(dict(results))
+        dims = {
+            k: v["unevenness"]
+            for k, v in out.items()
+            if isinstance(v, dict) and "unevenness" in v
+        }
+        if dims:
+            # Report the ranking, not a winner. These dimensions are correlated
+            # -- an app version belongs to exactly one platform, so a
+            # platform-wide fault always makes app_version look uneven too, and
+            # often more so because the segments are smaller. Naming a single
+            # "the answer" dimension would be doing the reasoning here, and
+            # doing it badly. The agent gets the numbers and decides.
+            out["unevenness_ranking"] = [
+                {"dimension": k, "unevenness": v}
+                for k, v in sorted(dims.items(), key=lambda kv: -kv[1])
+            ]
+            if max(dims.values()) < 0.30:
+                out["note"] = (
+                    "No dimension is notably uneven -- the problem affects traffic "
+                    "roughly evenly. Look at timing, infrastructure and error "
+                    "signatures rather than at who is affected."
+                )
+        return out
+
+    return await invoke("survey_segments", {"window_minutes": window_minutes}, body)

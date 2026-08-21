@@ -18,6 +18,7 @@ from .base import (
 )
 
 READ_TOOLS = [
+    read.survey_segments,
     read.query_conversion_funnel,
     read.query_payments,
     read.query_orders,
