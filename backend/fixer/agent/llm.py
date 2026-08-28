@@ -29,6 +29,20 @@ APP_NAME = "the-fixer"
 # SAFETY_LIMIT rather than left running.
 MAX_LLM_CALLS = 60
 
+# A single failed request must not kill a mission that is otherwise going fine.
+#
+# 400 is in this list deliberately, which is unusual -- it is normally a client
+# error and not worth retrying. But on Vertex under this workload it shows up
+# intermittently on long tool-calling conversations, and the identical request
+# succeeds on retry. Treating it as fatal cost us one mission in six.
+RETRY = types.HttpRetryOptions(
+    attempts=4,
+    initial_delay=1.0,
+    max_delay=15.0,
+    exp_base=2.0,
+    http_status_codes=[400, 408, 429, 500, 502, 503, 504],
+)
+
 
 def build_agent(name: str = "the_fixer") -> LlmAgent:
     backend = require()
@@ -92,7 +106,10 @@ async def stream_llm_mission(
             new_message=types.Content(
                 role="user", parts=[types.Part(text=objective_prompt(objective))]
             ),
-            run_config=RunConfig(max_llm_calls=MAX_LLM_CALLS),
+            run_config=RunConfig(
+                max_llm_calls=MAX_LLM_CALLS,
+                http_options=types.HttpOptions(retry_options=RETRY),
+            ),
         ):
             parts = event.content.parts if event.content and event.content.parts else []
             for part in parts:

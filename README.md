@@ -39,18 +39,16 @@ Then walks away. The agent:
 7. **Recovers** — if the metric did not move, it says so plainly, rejects that hypothesis,
    and investigates further rather than declaring victory.
 
-### The moment that matters
+### The trap
 
-In the flagship scenario, the agent finds a deployment that shipped 37 minutes before the
-symptoms began. Rolling it back is a sound first hypothesis, and the rollback genuinely
-succeeds.
+The flagship incident is built around one. A deployment shipped 37 minutes before the
+symptoms began. Rolling it back is a sound first hypothesis and a real, reversible
+action — and it fixes nothing, because runtime configuration is versioned separately
+from deployments, as it is in real systems, and that deployment's release script wrote
+a config change a rollback cannot revert.
 
-Conversion does not recover.
-
-That failure is not scripted. Runtime configuration is versioned separately from
-deployments — as it is in real systems — so the deployment's release script wrote a
-config change that a rollback cannot revert. The agent sees the metric refuse to move,
-rejects its hypothesis, finds the real cause, and fixes that.
+The failure is not scripted. It falls out of the world model, so an agent that takes the
+bait watches its own metric refuse to move:
 
 ```
 ios conversion   3.61%  ->  0.63%          web 4.02%, android 3.46%  (untouched)
@@ -58,13 +56,20 @@ ios conversion   3.61%  ->  0.63%          web 4.02%, android 3.46%  (untouched)
   restore the config         -> ios 3.84%, PAY_CFG_3021 errors drop to 0
 ```
 
+The heuristic baseline falls for it every time and has to recover. **Gemini 3.5 Flash
+did not fall for it once** across twelve missions — it read the error logs naming the
+configuration value, matched that to the change made by the release script, and went
+straight to the real cause. Both behaviours are measured below.
+
 ---
 
 ## Running it
 
 ### Try the hosted version
 
-*(Deployed URL — see the Devpost submission. No login required.)*
+**https://the-fixer-366816219932.us-central1.run.app**
+
+No login required. Running on Cloud Run with Gemini 3.5 Flash on Vertex AI.
 
 Pick a scenario, click **START MISSION**, and watch. Nothing is pre-recorded; the agent
 is querying a live database and the numbers on the chart come from rows it is really
@@ -89,8 +94,12 @@ cd frontend && npm ci && npm run build && cd ..
 cp .env.example .env
 #   Vertex AI:      GOOGLE_GENAI_USE_VERTEXAI=1
 #                   GOOGLE_CLOUD_PROJECT=your-project
-#                   GOOGLE_CLOUD_LOCATION=us-central1
+#                   GOOGLE_CLOUD_LOCATION=global
 #                   ...then: gcloud auth application-default login
+#
+#   NOTE: "global", not a region. Gemini 3.x is served from the global Vertex
+#   endpoint; a regional value returns 404 for the model. This is separate from
+#   the region your Cloud Run service runs in.
 #   Gemini API key: GOOGLE_API_KEY=...   (from aistudio.google.com/apikey)
 
 # 4. Run
@@ -174,25 +183,42 @@ still looks acceptable.
 
 ### Measured results
 
-Scored on identical seeds, so the comparison is like for like.
+Twelve missions — six incidents, two seeds each — scored by a grader that sits
+outside the agent and reads the world directly. The heuristic baseline ran on
+the identical seeds through the identical grader, so the comparison is like for
+like.
 
-```
-scripts/evaluate.py --agent oracle --runs 2      12 missions across 6 incidents
+| | **Gemini 3.5 Flash** | heuristic baseline |
+|---|---:|---:|
+| clean runs | **100%** | 50% |
+| root cause identified | **100%** | 50% |
+| correct remediation applied | **100%** | 50% |
+| metric genuinely recovered | **100%** | 50% |
+| **false completion** | **0%** | 0% |
+| **unauthorised actions** | **0** | 0 |
+| needed a second attempt | **0 of 12** | 9 of 12 |
+| mean tool calls per mission | 34.4 | 16.3 |
 
-  clean runs                       50.0%
-  root-cause accuracy              50.0%
-  correct remediation              50.0%
-  false completion                  0.0%     <- must be zero
-  unauthorised actions                 0     <- must be zero
-```
+Reproduce with `scripts/evaluate.py`; raw per-run data is written to
+`eval_results.json`.
 
-The heuristic baseline exists so that the model's number means something. "Solved 9 of
-10" says little on its own; "solved 9 of 10 where a reasonable heuristic solves 3" is a
-claim about reasoning. The baseline reliably solves the incidents that yield to
-segment-then-look-at-what-changed, and reliably fails the three that need actual inference.
+The last row is the one we find most interesting. The flagship incident is built
+around a trap: a deployment that shipped 37 minutes before the symptoms, which
+is a sound first suspect and a real, reversible action — and which does not fix
+anything. The heuristic falls for it every time and has to recover. **The model
+did not fall for it once.** It read the error logs naming the configuration
+value, matched that to the configuration change made by the deployment's release
+script, and went straight to the actual cause.
 
-*(LLM results are added here once measured — this README quotes only numbers that came
-out of a real run.)*
+So on these six incidents the recovery path was never needed. It is exercised
+instead by the baseline runs above, and by a regression test that drives a
+remediation to failure and checks the agent rejects the hypothesis rather than
+declaring victory (`scripts/smoke_day3.py`).
+
+**The zeros matter more than the hundreds.** A false completion rate of zero
+means the agent never once claimed success the numbers did not support — and the
+grader is demonstrably capable of catching that, because we feed it a mission
+that declares SUCCESS having done nothing and confirm it is caught.
 
 ---
 

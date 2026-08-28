@@ -13,13 +13,13 @@ has not actually been measured.
 | field | answer |
 |---|---|
 | **Project name** | The Fixer |
-| **Elevator pitch** | Today's AI tells you what's broken. The Fixer investigates, fixes it, and proves it's fixed — recovering on its own when its first attempt fails. |
+| **Elevator pitch** | Today's AI tells you what's broken. The Fixer investigates, fixes it, and proves it's fixed — against real business metrics, not its own say-so. |
 | **Track** | The Taskmaster |
 | **Which Google SDK / agent framework** | Google ADK (Agent Development Kit) 2.7, Python — `google-adk`, using `LlmAgent` |
 | **Which Gemini model** | `gemini-3.5-flash`, via Vertex AI |
 | **Google Cloud services** | Cloud Run (hosting), Vertex AI (inference), Cloud Build (container build), Cloud Logging |
-| **Hosted project URL** | `[FILL]` — no login required |
-| **Repository** | `[FILL]` — public. Verify it opens in an incognito window. |
+| **Hosted project URL** | https://the-fixer-366816219932.us-central1.run.app — no login required |
+| **Repository** | https://github.com/kadhim-alawi/the_fixer — public |
 | **Demo video** | `[FILL]` — YouTube, public, under 4 minutes |
 | **Reproducible testing instructions in README?** | Yes — clone-to-running steps, and it runs without credentials using a fallback agent |
 | **Date started** | 2026-08-19 |
@@ -54,7 +54,7 @@ health; records competing hypotheses with explicit confidence; applies the small
 reversible remediation it believes in; waits for real traffic to accumulate; and then
 verifies against the actual business metric.
 
-**The moment that matters is the one where it fails.**
+**The interesting part is what happens when the agent is wrong.**
 
 In the flagship scenario the agent finds a deployment that shipped 37 minutes before the
 symptoms began. Rolling it back is a sound first hypothesis, and the rollback genuinely
@@ -64,14 +64,19 @@ Conversion does not recover.
 
 That failure is not scripted. Runtime configuration is versioned separately from
 deployments, exactly as in real systems, so the deployment's release script wrote a config
-change that a rollback cannot revert. The agent watches the metric refuse to move, says so
-plainly, rejects its own hypothesis, re-investigates, finds the real cause and fixes that.
+change that a rollback cannot revert. An agent that takes the bait watches its own metric refuse to move, and has to say
+so plainly, reject its hypothesis, re-investigate and fix the real thing.
 
 ```
 ios conversion   3.61%  →  0.63%        web 4.02%, android 3.46% — untouched
   rollback deployment 8472   →  tool reports success, ios still 0.77%
   restore the configuration  →  ios 3.84%, PAY_CFG_3021 errors → 0, verified
 ```
+
+That is the trap working as designed. The measured result is better than that:
+**the model never fell for it.** Across twelve missions it went straight to the
+real cause every time, while the heuristic baseline needed a second attempt in
+nine of twelve.
 
 Mission Control — the console it runs in — is deliberately not a chat window. It's an
 operations display: a live timeline, hypothesis confidence bars with rejected ones struck
@@ -176,6 +181,29 @@ Real integrations behind the same tool interface — the tool contracts were des
 simulator can be swapped for live analytics and deployment systems without touching the
 agent. Then learning across missions, so a cause seen once is recognised faster, and
 multi-objective missions where the agent has to decide what to work on first.
+
+---
+
+## Measured results
+
+Twelve missions — six incidents, two seeds each. The heuristic baseline ran on the
+identical seeds through the identical grader, so the comparison is like for like.
+
+| | **Gemini 3.5 Flash** | heuristic baseline |
+|---|---:|---:|
+| clean runs | **100%** | 50% |
+| root cause identified | **100%** | 50% |
+| correct remediation applied | **100%** | 50% |
+| metric genuinely recovered | **100%** | 50% |
+| **false completion** | **0%** | 0% |
+| **unauthorised actions** | **0** | 0 |
+| needed a second attempt | **0 of 12** | 9 of 12 |
+| mean tool calls per mission | 34.4 | 16.3 |
+
+The zeros matter more than the hundreds. A false completion rate of zero means the agent
+never claimed a success the numbers did not support — and the grader demonstrably catches
+that when it happens, because we feed it a mission that declares SUCCESS having done
+nothing and confirm it is caught.
 
 ---
 

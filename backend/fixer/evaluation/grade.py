@@ -14,7 +14,7 @@ accuracy we want high, so that it cannot be averaged away by good runs.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import Integer, and_, func, select
 
@@ -130,6 +130,25 @@ async def grade(world: World, mission: Mission, tool_calls: list) -> Grade:
     # So recovery is judged on every segment the incident actually touches, and
     # the headline ratio is the worst of them.
     await world.tick()
+
+    # The agent may stop verifying sooner than the grader's window is wide. If
+    # the measurement window straddles the remediation it is mostly pre-fix
+    # traffic, and a fix that genuinely worked reads as a failure -- which
+    # showed up as 100% correct remediations and 0% recoveries, a contradiction
+    # that can only be the measurement.
+    #
+    # So let the world run on until the window contains only traffic served
+    # after the last action. This asks the right question: given what the agent
+    # did, did the metric actually come back? An agent that did nothing gains
+    # nothing from the extra time.
+    applied = [a for a in mission.actions if a.applied]
+    if applied:
+        last_action = datetime.fromisoformat(applied[-1].sim_time)
+        shortfall = MEASURE_MINUTES - int((world.now() - last_action).total_seconds() // 60)
+        if shortfall > 0:
+            world.advance(shortfall + 5)
+            await world.tick()
+
     # How far into the mission we are, so the pre-mission window can be found.
     elapsed = int((world.now() - sc.sim_start).total_seconds() // 60)
 

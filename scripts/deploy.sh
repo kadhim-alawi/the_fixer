@@ -50,7 +50,11 @@ gcloud projects add-iam-policy-binding "${PROJECT}" \
 echo "==> building and deploying"
 # 2Gi: /tmp is memory-backed and holds the simulated warehouse per mission.
 # Concurrency 4: missions are long-lived SSE streams, not cheap requests.
+# --quiet: deploying from source offers to create an Artifact Registry
+# repository interactively. With no TTY that prompt aborts the deploy right
+# after the upload, leaving a log that simply stops with no error.
 gcloud run deploy "${SERVICE}" \
+  --quiet \
   --source . \
   --project "${PROJECT}" \
   --region "${REGION}" \

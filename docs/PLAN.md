@@ -537,3 +537,40 @@ variables, entrypoint, storage paths. A mission ran and solved `fraud_overblock`
 correctly with no errors in the log.
 
 Deployment itself needs a project and is the user's call.
+
+### Aug 28 — credentials arrived, agent measured, service deployed
+
+**Live:** https://the-fixer-366816219932.us-central1.run.app
+**Repo:** https://github.com/kadhim-alawi/the_fixer
+
+| | Gemini 3.5 Flash | heuristic baseline |
+|---|---:|---:|
+| clean runs | 100% | 50% |
+| false completion | 0% | 0% |
+| unauthorised actions | 0 | 0 |
+| needed a second attempt | 0 of 12 | 9 of 12 |
+
+**A measurement bug that would have been humiliating.** The first LLM evaluation
+reported 100% correct remediations and 0% metric recovery — a contradiction, since
+the world itself confirms the fixing action landed. The agent waits ~30 sim-minutes
+after its fix; the grader measured a 60-minute window, so half of what it measured
+was pre-fix traffic and every working fix read as a failure. Uncaught, the
+submission would have carried "false completion rate: 100%" for a project whose
+entire pitch is that it does not do that. The grader now lets the world run until
+its window contains only post-remediation traffic.
+
+**Two deployment bugs.** `gemini-3.5-flash` 404s on a regional Vertex endpoint — it
+is served from location `global`, which is not the same thing as the Cloud Run
+region, and the deploy script conflated them. And `gcloud run deploy --source`
+offers to create an Artifact Registry repository interactively; with no TTY that
+prompt aborts the deploy right after "Uploading sources", leaving a log that simply
+stops with no error. Needed `--quiet`.
+
+**An intermittent Vertex 400** killed one mission in six on long tool-calling
+conversations. Payload size was not the cause (44KB total). Now retried with
+backoff, since a production agent should not lose a mission to one bad request.
+
+**The narrative changed to match the evidence.** The pitch assumed the agent would
+fail once and recover — that is what the heuristic does, in 9 of 12 runs. The model
+never fell for the trap. The docs now say so rather than describing a failure that
+does not happen.
