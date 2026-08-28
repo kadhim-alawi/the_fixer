@@ -94,6 +94,8 @@ export default function App() {
 
   const m = mission?.mission
   const c = m?.counters
+  // Has anything the agent did already been verified as effective?
+  const fixedAlready = !!m?.actions?.some((a) => a.verified_effective === true)
   const running = mission?.state === 'running'
   const status = m?.status ?? 'IDLE'
 
@@ -230,6 +232,14 @@ export default function App() {
           <div className="modal">
             <header><h3>⚠ APPROVAL REQUIRED</h3></header>
             <div className="body">
+              {/* Without this line the dialog reads as the agent going rogue.
+                  It is almost always a follow-up after the objective is already
+                  met, and a reader has seconds to work that out. */}
+              <div className={`ctx ${fixedAlready ? 'ok' : ''}`}>
+                {fixedAlready
+                  ? 'Objective already met — a remediation has been applied and verified. This is a follow-up action.'
+                  : 'The mission is still working towards the objective.'}
+              </div>
               <dl>
                 <dt>action</dt><dd>{mission.pending_approval.tool}</dd>
                 <dt>parameters</dt><dd>{JSON.stringify(mission.pending_approval.args)}</dd>

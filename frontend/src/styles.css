@@ -184,7 +184,10 @@ body {
 /* ---------- approval ---------- */
 
 .scrim {
-  position: fixed; inset: 0; background: rgba(5,8,12,.75);
+  /* Light enough that the timeline and the recovered chart stay readable
+     behind it -- the context for the dialog is on the screen it covers. */
+  position: fixed; inset: 0; background: rgba(5,8,12,.45);
+  backdrop-filter: blur(1.5px);
   display: flex; align-items: center; justify-content: center; z-index: 50;
 }
 .modal {
@@ -195,6 +198,11 @@ body {
 .modal header { padding: 14px 18px; background: rgba(255,182,72,.12); border-bottom: 1px solid var(--line); }
 .modal header h3 { margin: 0; font-size: 14px; color: var(--warn); letter-spacing: 1px; }
 .modal .body { padding: 18px; }
+.modal .ctx {
+  font-size: 12px; line-height: 1.5; color: var(--dim);
+  border-left: 3px solid var(--line); padding: 7px 0 7px 11px; margin-bottom: 15px;
+}
+.modal .ctx.ok { color: var(--good); border-left-color: var(--good); }
 .modal dl { margin: 0 0 16px; display: grid; grid-template-columns: 110px 1fr; gap: 8px 12px; font-size: 12px; }
 .modal dt { color: var(--dimmer); }
 .modal dd { margin: 0; }
