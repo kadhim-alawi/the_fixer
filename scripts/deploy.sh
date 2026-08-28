@@ -12,7 +12,11 @@
 set -euo pipefail
 
 PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
-REGION="${REGION:-us-central1}"
+REGION="${REGION:-us-central1}"        # where Cloud Run runs
+# Gemini 3.x is served from the "global" Vertex location, not from a
+# regional endpoint. These are two different things and must not be
+# conflated -- passing the Cloud Run region here yields a 404.
+VERTEX_LOCATION="${VERTEX_LOCATION:-global}"
 SERVICE="${SERVICE:-the-fixer}"
 MODEL="${FIXER_MODEL:-gemini-3.5-flash}"
 
@@ -22,7 +26,7 @@ if [ -z "${PROJECT}" ]; then
 fi
 
 echo "project : ${PROJECT}"
-echo "region  : ${REGION}"
+echo "region  : ${REGION}  (vertex: ${VERTEX_LOCATION})"
 echo "service : ${SERVICE}"
 echo "model   : ${MODEL}"
 echo
@@ -57,7 +61,7 @@ gcloud run deploy "${SERVICE}" \
   --timeout 3600 \
   --concurrency 4 \
   --max-instances 3 \
-  --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION},FIXER_MODEL=${MODEL},FIXER_MISSION_DIR=/tmp/missions"
+  --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=1,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${VERTEX_LOCATION},FIXER_MODEL=${MODEL},FIXER_MISSION_DIR=/tmp/missions"
 
 URL="$(gcloud run services describe "${SERVICE}" --project "${PROJECT}" --region "${REGION}" --format='value(status.url)')"
 echo

@@ -27,10 +27,8 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-from sqlalchemy.ext.asyncio import create_async_engine
-
 from fixer.agent import model as model_cfg
-from fixer.agent.runner import stream_mission
+from fixer.agent.llm import stream_llm_mission
 from fixer.sim.world import build_world
 
 OBJECTIVE = (
@@ -78,18 +76,16 @@ async def main() -> int:
 
     print(f"model         : {backend.model}")
 
-    if os.path.exists(args.db):
-        os.remove(args.db)
-    engine = create_async_engine(f"sqlite+aiosqlite:///{args.db}")
-    world = World(engine)
-
     print("\nbuilding NovaCart ...", end="", flush=True)
-    sc = await world.start_scenario(seed=args.seed, speed=args.speed)
+    engine, world = await build_world(
+        args.db, incident_key=args.incident, seed=args.seed, speed=args.speed
+    )
+    sc = world.scenario
     print(f" done  (scenario {sc.scenario_id}, {args.speed:g}x sim clock)")
     print(f"\nOBJECTIVE: {args.objective}\n")
     print("-" * 78)
 
-    async for ev in stream_mission(world, args.objective, guard=approval_guard):
+    async for ev in stream_llm_mission(world, args.objective, guard=approval_guard):
         icon = ICON.get(ev.kind, " ")
         if ev.kind in ("tool_call", "action"):
             tag = f"[{ev.risk}]" if ev.risk and ev.risk != "LOW" else ""
