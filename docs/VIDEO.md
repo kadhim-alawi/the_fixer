@@ -46,7 +46,21 @@ segments — the timeline has to be continuous to be believable.
 ## Narration script
 
 **Matched to the recorded footage of mission M-C74B6D6D.** Every number spoken
-here appears on screen in that take. If you re-record, re-check them — a figure
+here appears on screen in that take:
+
+| spoken | where it appears on screen |
+|---|---|
+| 221 payment failures | `record_finding` at 14:54:25, and again in the conclusion panel |
+| 806 log entries ("more than eight hundred") | `query_logs` result at 15:03:26 |
+| 30 minutes / 8,760 sessions | `wait_for_traffic` and its result at 16:04:37 |
+| 94% payment success | `check_payment_success` at 16:15:33 |
+| 469 failed orders | `query_orders` at 16:33:53 |
+| 0.638% → 3.533%, reference 3.517% | conclusion panel, "measured" |
+
+Careful with one thing: later in the timeline `PAY_CFG_3021 x381` appears — that
+is the same error over a 180-minute window, not a contradiction of the 221 over
+60 minutes. Do not cut those two shots adjacent to each other.
+ If you re-record, re-check them — a figure
 in the voiceover that contradicts the console is worse than no figure at all.
 
 ~550 words, about 3:40 at a natural pace.
@@ -80,9 +94,9 @@ platform, region, traffic source and app version — six queries, run
 concurrently. iOS is severely impacted. Web and Android are untouched.
 
 Then the failure signature. Two hundred and twenty-one payment failures in the
-last hour, all carrying the same unusual error code. Eight hundred error log
-entries from the payments service, naming the exact provider profile that is
-rejecting those transactions.
+last hour, all carrying the same unusual error code. More than eight hundred
+error log entries from the payments service, naming the exact provider profile
+that is rejecting those transactions.
 
 **[1:15 — query_deployments, then query_configuration]**
 
