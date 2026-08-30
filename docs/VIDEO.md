@@ -17,7 +17,7 @@ Cloud proof. Generate the *voice*, not the video.
 | URL | https://the-fixer-366816219932.us-central1.run.app |
 | Scenario | `payment config regression` (the default) |
 | Second tab | Google Cloud console → Cloud Run → `the-fixer` service |
-| Third tab | Cloud Run → the-fixer → **Logs** (shows Vertex calls) |
+| Third tab | Cloud Run → the-fixer → **Logs**, and the **Metrics** tab |
 
 Do one full practice run first so you know the pacing. A mission takes roughly
 three to four minutes of real time; you will speed parts of it up in editing.
@@ -34,109 +34,113 @@ segments — the timeline has to be continuous to be believable.
 | 0:00–0:20 | Mission Control, idle, objective visible | Opening. Nothing moving yet. |
 | 0:20–0:35 | Click **START MISSION** | The only human action in the whole video. |
 | 0:35–1:15 | Timeline filling: `survey_segments`, findings, hypotheses | Speed to ~1.5× if slow. Let the tool names be readable. |
-| 1:15–1:50 | Hypothesis panel + `query_configuration` / `query_deployments` rows | This is where the trap is explained. Hold on the two hypotheses. |
+| 1:15–1:50 | `query_deployments` then `query_configuration` rows, hypothesis panel | The trap. Hold on the deployment row, then on H1 reaching 100%. |
 | 1:50–2:20 | `restore_configuration` row, then `wait_for_traffic`, then the chart recovering | **The money shot.** Hold on the chart as the blue line comes back. |
 | 2:20–2:45 | Approval dialog | Do not rush. Read the risk fields. Click **REJECT**. |
 | 2:45–3:05 | Conclusion panel: PROBLEM SOLVED, root cause, measured numbers | Hold long enough to read. |
-| 3:05–3:35 | **Cloud Console**: Cloud Run service page, then Logs showing Vertex calls, then the `.run` URL in the address bar | **Required.** Do not shorten this. |
+| 3:05–3:35 | **Cloud Console**: the `the-fixer` service page with region and `.run` URL visible, then the Logs tab, then Metrics | **Required.** Do not shorten this. |
 | 3:35–3:45 | Back to the conclusion panel or a title card | Closing line. |
 
 ---
 
 ## Narration script
 
-~555 words, about 3:40 at a natural pace. Timings are guides; cut screen
-footage to fit the voice, not the other way round.
+**Matched to the recorded footage of mission M-C74B6D6D.** Every number spoken
+here appears on screen in that take. If you re-record, re-check them — a figure
+in the voiceover that contradicts the console is worse than no figure at all.
+
+~550 words, about 3:40 at a natural pace.
 
 ---
 
 **[0:00 — idle console]**
 
 Every AI operations tool stops in the same place. It notices something is wrong,
-explains it clearly, and then hands the problem back to a human. The work of
-actually fixing it never moves.
+explains it clearly, and hands the problem back to a human. The work of actually
+fixing it never moves.
 
-This is The Fixer. It's an autonomous agent that takes an operational objective,
+This is The Fixer. An autonomous agent that takes an operational objective,
 investigates it, fixes it, and then proves the problem is actually gone.
 
-**[0:20 — typing / clicking START MISSION]**
+**[0:20 — clicking START MISSION]**
 
-Here's a real incident. Conversion has dropped on an e-commerce platform, and
-nobody knows why. The operator gives the agent one sentence — "find out why and
-fix the problem" — and clicks start.
+Conversion has dropped on an e-commerce platform, and nobody knows why. The
+operator gives the agent one sentence — find out why, and fix the problem — and
+clicks start.
 
-That's the last thing a human does.
+That is the last thing a human does.
 
-**[0:35 — timeline filling]**
+**[0:35 — survey_segments and the first findings]**
 
-The agent is running on **Gemini 3.5 Flash**, through the **Google Agent
-Development Kit**, on **Cloud Run**, with inference on **Vertex AI**.
+The agent runs on **Gemini 3.5 Flash**, through the **Google Agent Development
+Kit**, on **Cloud Run**, with inference on **Vertex AI**.
 
 Its first move is to find out *who* is affected. It slices conversion by
-platform, region, traffic source and app version — all at once, in parallel. The
-problem is isolated to iOS. Web and Android are untouched.
+platform, region, traffic source and app version — six queries, run
+concurrently. iOS is severely impacted. Web and Android are untouched.
 
-It reads the payment failures. An unusual error code, PAY underscore CFG three
-oh two one, appearing hundreds of times an hour. Then the error logs, which name
-the specific payment profile that's rejecting those transactions.
+Then the failure signature. Two hundred and twenty-one payment failures in the
+last hour, all carrying the same unusual error code. Eight hundred error log
+entries from the payments service, naming the exact provider profile that is
+rejecting those transactions.
 
-**[1:15 — hypothesis panel]**
+**[1:15 — query_deployments, then query_configuration]**
 
-Now it has two competing explanations, and it records both with explicit
-confidence.
+This is where most investigations go wrong.
 
-There's a deployment that shipped thirty-seven minutes before the symptoms
-started. That's the obvious suspect — and rolling it back is a real, reversible
-action.
+There is a deployment on the board, and a deployment shortly before an incident
+is the obvious suspect. Rolling it back is the first thing most people would try.
 
-But it's the wrong answer. Runtime configuration is versioned separately from
-deployments, exactly as in real systems. That deployment's release script changed
-a config value, and rolling the deployment back would not revert it.
+It would not have worked. Configuration is versioned separately from code, as it
+is in real systems — so rolling that deployment back would not have reverted the
+setting its own release script changed.
 
-We measured this. A reasonable heuristic agent falls for that trap in nine runs
-out of twelve. Gemini didn't fall for it once.
+Watch what the agent does. It looks at the deployments, then goes to the
+configuration history, and finds the key that release script changed at thirteen
+hundred UTC. It never proposes the rollback at all. Confidence: one hundred
+percent.
 
-**[1:50 — restore_configuration, then the chart]**
+**[1:50 — restore_configuration, wait, then the chart recovering]**
 
-It goes straight to the configuration change, and restores it.
+It restores the configuration.
 
-Then — and this is the part that matters — it waits. A fix only affects traffic
-served after it's applied, so the agent lets fifteen minutes of real sessions
-accumulate before it judges anything.
+Then it waits. A fix only affects traffic served after it is applied, so the
+agent lets thirty minutes of real sessions accumulate — eight thousand seven
+hundred and sixty of them — before it judges anything.
 
-Then it verifies. Not "did my tool call return success" — the actual business
-metric. iOS conversion, back from zero point six percent to three point five.
-Payment errors, down to zero.
+Then it verifies against the actual business metric, not whether its own tool
+call returned success. iOS payment success rate: ninety-four percent. Failures
+with that error code: zero.
 
 **[2:20 — approval dialog]**
 
-Then it finds three hundred and sixty failed orders from the outage and decides
-those customers deserve refunds.
+Then it looks at the damage. Four hundred and sixty-nine orders failed during
+the outage, and the agent decides those customers should be refunded.
 
-It cannot do that on its own. Refunds are high risk and irreversible, so the
-agent stops, mid-action, and asks a human. Every tool carries a permission, a
-risk level and a reversibility, and the agent physically cannot execute this one
-without approval.
+It cannot do that on its own. Every tool carries a permission, a risk level and
+a reversibility — and refunds are high risk and irreversible. So the agent stops
+mid-action and puts the decision in front of a human.
 
 **[2:45 — conclusion panel]**
 
-Mission complete. Root cause, the evidence for it, and the measured before and
-after.
+Mission complete — root cause, evidence, and the measured before and after. iOS
+conversion was zero point six four percent during the incident. Afterwards,
+three point five three, against a reference of three point five two.
 
-Across twelve missions on six different incidents, the agent identified the root
+Across twelve missions on six different incidents, the agent found the root
 cause every time, applied the correct fix every time, and the metric genuinely
 recovered every time. Zero unauthorised actions. And a false completion rate of
-zero — it never once claimed a success the numbers didn't support.
+zero — it never once claimed a success the numbers did not support.
 
 **[3:05 — Cloud Console]**
 
-All of this runs on Google Cloud. Cloud Run hosting the service, Vertex AI
-serving Gemini 3.5 Flash, Cloud Build producing the container, and Cloud Logging
-recording every tool call and every refusal.
+All of this runs on Google Cloud. Cloud Run hosting the service in
+us-central-one, Vertex AI serving Gemini 3.5 Flash, and the live request logs
+and metrics from the mission you just watched.
 
 **[3:35 — close]**
 
-The Fixer doesn't tell you what to do. It takes responsibility for getting the
+The Fixer does not tell you what to do. It takes responsibility for getting the
 problem solved — and it proves it.
 
 ---
@@ -158,8 +162,9 @@ can retime individual parts against the footage.
 > **Emphasis:**
 > - Land clearly on the product names: *Gemini 3.5 Flash*, *Google Agent
 >   Development Kit*, *Cloud Run*, *Vertex AI*.
-> - Pause briefly before "But it's the wrong answer."
-> - Slow down for "zero point six percent to three point five".
+> - Pause briefly before "It would not have worked."
+> - Land "It never proposes the rollback at all" flatly, without triumph.
+> - Slow down for "zero point six four percent" and "three point five three".
 > - Slight emphasis on "It cannot do that on its own."
 > - The final line is quieter and slower than everything before it.
 >
@@ -171,8 +176,8 @@ can retime individual parts against the footage.
 If the generated audio runs long, cut these first — they carry the least:
 
 1. "Web and Android are untouched." (0:35 block)
-2. "Cloud Build producing the container" (3:05 block)
-3. "the evidence for it" (2:45 block)
+2. "and the live request logs and metrics from the mission you just watched" (3:05)
+3. "root cause, evidence, and" (2:45 block)
 
 Do **not** cut: any product name, the false-completion sentence, or the Cloud
 Cloud proof section.
