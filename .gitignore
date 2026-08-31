@@ -8,3 +8,10 @@ dist/
 uv.lock
 .worldcache/
 missions/
+
+# Working documents for the submission itself -- video script, YouTube fields,
+# Devpost copy. Kept locally, deliberately not published: they are about
+# presenting the project, not part of it.
+docs/VIDEO.md
+docs/YOUTUBE.md
+docs/SUBMISSION.md
